@@ -1,0 +1,117 @@
+deck_id,domain_int,deck_name,deck_order,is_premium
+D1-cabling-interfaces,1,Cabling & Interfaces,1,false
+D1-ipv4-addressing,1,IPv4 Addressing,2,false
+D1-ipv4-subnetting,1,IPv4 Subnetting,3,false
+D1-ipv6-addressing,1,IPv6 Addressing,4,false
+D1-network-components,1,Network Components,5,false
+D1-network-topologies,1,Network Topologies,6,false
+D1-physical-components,1,Physical Components,7,false
+D1-switching-concepts,1,Switching Concepts,8,false
+D1-tcp-vs-udp,1,TCP vs UDP,9,false
+D1-virtualization,1,Virtualization,10,false
+D1-wireless-fundamentals,1,Wireless Fundamentals,11,false
+D2-8021q-trunking,2,802.1Q Trunking,1,true
+D2-access-vs-trunk-ports,2,Access vs Trunk Ports,2,true
+D2-dtp,2,DTP,3,true
+D2-device-management,2,Device Management,4,true
+D2-etherchannel,2,EtherChannel,5,true
+D2-stp-basics,2,STP Basics,6,true
+D2-stp-convergence,2,STP Convergence,7,true
+D2-stp-operations,2,STP Operations,8,true
+D2-stp-protections,2,STP Protections,9,true
+D2-stp-protections-v11,2,STP Protections (v1.1),10,true
+D2-stp-troubleshooting,2,STP Troubleshooting,11,true
+D2-vlan-fundamentals,2,VLAN Fundamentals,12,true
+D2-wireless-architectures,2,Wireless Architectures,13,true
+D2-wireless-design,2,Wireless Design,14,true
+D2-wireless-management,2,Wireless Management,15,true
+D2-wireless-operations,2,Wireless Operations,16,true
+D2-wireless-security,2,Wireless Security,17,true
+D2-wireless-troubleshooting,2,Wireless Troubleshooting,18,true
+D3-fhrp-concepts,3,FHRP Concepts,1,true
+D3-fhrp-configuration,3,FHRP Configuration,2,true
+D3-fhrp-troubleshooting,3,FHRP Troubleshooting,3,true
+D3-ospf-basics,3,OSPF Basics,4,true
+D3-ospf-configuration,3,OSPF Configuration,5,true
+D3-ospf-troubleshooting,3,OSPF Troubleshooting,6,true
+D3-ospf-verification,3,OSPF Verification,7,true
+D3-path-selection,3,Path Selection,8,true
+D3-route-lookup,3,Route Lookup,9,true
+D3-routing-concepts,3,Routing Concepts,10,true
+D3-static-routing,3,Static Routing,11,true
+D4-dhcp-concepts,4,DHCP Concepts,1,true
+D4-dhcp-configuration,4,DHCP Configuration,2,true
+D4-dhcp-relay,4,DHCP Relay,3,true
+D4-dhcp-troubleshooting,4,DHCP Troubleshooting,4,true
+D4-dns-concepts,4,DNS Concepts,5,true
+D4-dns-configuration,4,DNS Configuration,6,true
+D4-dns-troubleshooting,4,DNS Troubleshooting,7,true
+D4-file-services,4,File Services,8,true
+D4-nat-concepts,4,NAT Concepts,9,true
+D4-nat-configuration,4,NAT Configuration,10,true
+D4-nat-troubleshooting,4,NAT Troubleshooting,11,true
+D4-nat-verification,4,NAT Verification,12,true
+D4-ntp-concepts,4,NTP Concepts,13,true
+D4-ntp-configuration,4,NTP Configuration,14,true
+D4-ntp-security,4,NTP Security,15,true
+D4-ntp-troubleshooting,4,NTP Troubleshooting,16,true
+D4-network-monitoring,4,Network Monitoring,17,true
+D4-qos-concepts,4,QoS Concepts,18,true
+D4-qos-verification,4,QoS Verification,19,true
+D4-snmp-concepts,4,SNMP Concepts,20,true
+D4-snmp-configuration,4,SNMP Configuration,21,true
+D4-snmp-security,4,SNMP Security,22,true
+D4-snmp-verification,4,SNMP Verification,23,true
+D4-syslog-concepts,4,Syslog Concepts,24,true
+D4-syslog-configuration,4,Syslog Configuration,25,true
+D4-syslog-security,4,Syslog Security,26,true
+D4-syslog-verification,4,Syslog Verification,27,true
+D5-acl-best-practices,5,ACL Best Practices,1,true
+D5-acl-concepts,5,ACL Concepts,2,true
+D5-acl-configuration,5,ACL Configuration,3,true
+D5-acl-logic,5,ACL Logic,4,true
+D5-acl-placement,5,ACL Placement,5,true
+D5-acl-review,5,ACL Review,6,true
+D5-acl-troubleshooting,5,ACL Troubleshooting,7,true
+D5-acl-verification,5,ACL Verification,8,true
+D5-dai-troubleshooting,5,DAI Troubleshooting,9,true
+D5-dhcp-snooping,5,DHCP Snooping,10,true
+D5-dhcp-snooping-troubleshooting,5,DHCP Snooping Troubleshooting,11,true
+D5-device-hardening,5,Device Hardening,12,true
+D5-dynamic-arp-inspection,5,Dynamic ARP Inspection,13,true
+D5-ip-source-guard,5,IP Source Guard,14,true
+D5-ip-source-guard-troubleshooting,5,IP Source Guard Troubleshooting,15,true
+D5-management-plane-security,5,Management Plane Security,16,true
+D5-network-security,5,Network Security,17,true
+D5-password-security,5,Password Security,18,true
+D5-port-security,5,Port Security,19,true
+D5-port-security-recovery,5,Port Security Recovery,20,true
+D5-port-security-troubleshooting,5,Port Security Troubleshooting,21,true
+D5-secure-management,5,Secure Management,22,true
+D5-security-awareness,5,Security Awareness,23,true
+D5-security-concepts,5,Security Concepts,24,true
+D5-security-monitoring,5,Security Monitoring,25,true
+D5-security-principles,5,Security Principles,26,true
+D5-threat-types,5,Threat Types,27,true
+D5-vpn-concepts,5,VPN Concepts,28,true
+D5-vpn-security,5,VPN Security,29,true
+D6-api-authentication,6,API Authentication,1,true
+D6-api-security,6,API Security,2,true
+D6-apis,6,APIs,3,true
+D6-automation-best-practices,6,Automation Best Practices,4,true
+D6-automation-risks,6,Automation Risks,5,true
+D6-automation-tools,6,Automation Tools,6,true
+D6-automation-use-cases,6,Automation Use Cases,7,true
+D6-ccna-exam-focus,6,CCNA Exam Focus,8,true
+D6-controller-examples,6,Controller Examples,9,true
+D6-data-formats,6,Data Formats,10,true
+D6-devops-concepts,6,DevOps Concepts,11,true
+D6-management-models,6,Management Models,12,true
+D6-netconf-concepts,6,NETCONF Concepts,13,true
+D6-network-automation,6,Network Automation,14,true
+D6-network-controllers,6,Network Controllers,15,true
+D6-python-basics,6,Python Basics,16,true
+D6-rest-concepts,6,REST Concepts,17,true
+D6-restconf-concepts,6,RESTCONF Concepts,18,true
+D6-sdn-concepts,6,SDN Concepts,19,true
+D6-version-control,6,Version Control,20,true
