@@ -1,16 +1,31 @@
-export async function explainConcept(prompt: string): Promise<string> {
+// services/gemini.ts
+export async function explainConcept(concept: string, answerContext?: string) {
+  const prompt = `
+You are a CCNA tutor.
+Explain this concept clearly with practical networking examples.
+
+CONCEPT: ${concept}
+
+${answerContext ? `ANSWER CONTEXT:\n${answerContext}\n` : ""}
+
+Return:
+- Simple explanation
+- Real-world example
+- Key commands (if relevant)
+- Common mistakes
+`;
+
   const res = await fetch("/api/gemini", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ prompt }),
   });
 
+  const data = await res.json();
+
   if (!res.ok) {
-    throw new Error("AI service unavailable");
+    throw new Error(data?.error || "Gemini API failed");
   }
 
-  const data = await res.json();
-  return data.text;
+  return data.text as string;
 }
