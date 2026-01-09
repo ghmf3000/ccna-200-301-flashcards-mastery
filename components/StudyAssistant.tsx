@@ -1,55 +1,59 @@
+import React, { useMemo } from "react";
+import { marked } from "marked";
+import DOMPurify from "dompurify";
 
-import React from 'react';
-
-interface StudyAssistantProps {
+type Props = {
   concept: string;
   explanation: string;
   loading: boolean;
   onClose: () => void;
+};
+
+function wrapHashtags(html: string) {
+  // Wrap hashtags like #OSPF, #CCNA-Tips (not headings)
+  return html.replace(/(^|\s)(#[\w-]+)/g, '$1<span class="ai-hashtag">$2</span>');
 }
 
-const StudyAssistant: React.FC<StudyAssistantProps> = ({ concept, explanation, loading, onClose }) => {
+export default function StudyAssistant({ concept, explanation, loading, onClose }: Props) {
+  const html = useMemo(() => {
+    const raw = marked.parse(explanation || "");
+    const safe = DOMPurify.sanitize(String(raw));
+    return wrapHashtags(safe);
+  }, [explanation]);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-      <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-300">
-        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white shadow-md">
-              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-            </div>
-            <div>
-              <h3 className="font-bold text-slate-800">AI Tutor</h3>
-              <p className="text-xs text-slate-500 uppercase tracking-widest font-semibold">Deep Dive: {concept}</p>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-2xl rounded-3xl bg-white shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b">
+          <div>
+            <div className="text-sm font-black text-slate-800">AI Tutor</div>
+            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+              Deep Dive: {concept}
             </div>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
-            <svg className="w-6 h-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-xl">×</button>
         </div>
 
-        <div className="p-8 max-h-[60vh] overflow-y-auto">
+        <div className="max-h-[70vh] overflow-y-auto px-6 py-5">
           {loading ? (
-            <div className="flex flex-col items-center justify-center py-12 space-y-4">
-              <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-              <p className="text-slate-500 font-medium animate-pulse">Consulting the documentation...</p>
+            <div className="space-y-3 animate-pulse">
+              <div className="h-4 bg-slate-200 rounded w-3/4" />
+              <div className="h-4 bg-slate-200 rounded w-full" />
+              <div className="h-4 bg-slate-200 rounded w-11/12" />
+              <div className="h-4 bg-slate-200 rounded w-2/3" />
             </div>
           ) : (
-            <div className="prose prose-slate max-w-none">
-               <div className="whitespace-pre-wrap text-slate-700 leading-relaxed text-lg">
-                {explanation}
-              </div>
-            </div>
+            <div
+              className="ai-explanation prose prose-slate max-w-none"
+              dangerouslySetInnerHTML={{ __html: html }}
+            />
           )}
         </div>
 
-        <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
-          <button 
+        <div className="px-6 py-4 border-t flex justify-end">
+          <button
             onClick={onClose}
-            className="px-6 py-2 bg-slate-800 text-white rounded-lg font-semibold hover:bg-slate-700 transition-colors shadow-sm"
+            className="px-5 py-2.5 rounded-xl bg-slate-900 text-white font-bold hover:bg-slate-800"
           >
             Got it, thanks!
           </button>
@@ -57,6 +61,4 @@ const StudyAssistant: React.FC<StudyAssistantProps> = ({ concept, explanation, l
       </div>
     </div>
   );
-};
-
-export default StudyAssistant;
+}
