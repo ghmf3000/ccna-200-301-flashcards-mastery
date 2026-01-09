@@ -265,13 +265,13 @@ const App: React.FC = () => {
     setMasteredIds(next);
   };
 
-  const handleSpeak = async (text: string) => {
+  // const handleSpeak = async (text: string) => {
     if (!audioCtxRef.current) {
       audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
     }
     if (isSpeaking) return;
     setIsSpeaking(true);
-   ## const buffer = await speakText(text, audioCtxRef.current);
+  // const buffer = await speakText(text, audioCtxRef.current);
     if (buffer) {
       const source = audioCtxRef.current.createBufferSource();
       source.buffer = buffer;
@@ -279,7 +279,7 @@ const App: React.FC = () => {
       source.onended = () => setIsSpeaking(false);
       source.start();
     } else { setIsSpeaking(false); }
-  };
+  //};
 
   const handleExplain = async (concept: string) => {
     setCurrentConcept(concept);
