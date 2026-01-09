@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { CCNA_DOMAINS, CCNA_Category, Flashcard, Deck, Card, User } from './types';
 import FlashcardComponent from './components/FlashcardComponent';
 import StudyAssistant from './components/StudyAssistant';
-import { explainConcept, speakText } from './services/gemini';
+import { explainConcept } from './services/gemini';
 import { loadDecks, loadCards } from './services/csvParser';
 import { startStripeCheckout } from './services/stripe';
 
