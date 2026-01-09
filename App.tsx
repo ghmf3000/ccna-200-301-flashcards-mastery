@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { CCNA_DOMAINS, CCNA_Category, Flashcard, Deck, Card, User } from './types';
+import { CCNA_DOMAINS, CCNA_Category, Deck, Card, User } from './types';
 import FlashcardComponent from './components/FlashcardComponent';
 import StudyAssistant from './components/StudyAssistant';
 import { explainConcept } from './services/gemini';
@@ -33,7 +33,7 @@ const App: React.FC = () => {
   const [view, setView] = useState<AppView>('login');
   const [user, setUser] = useState<User | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
-  
+
   // Data state
   const [decks, setDecks] = useState<Deck[]>([]);
   const [cards, setCards] = useState<Card[]>([]);
@@ -45,7 +45,7 @@ const App: React.FC = () => {
   const [selectedDomainName, setSelectedDomainName] = useState<string | null>(null);
   const [selectedDeckId, setSelectedDeckId] = useState<string | null>(null);
   const [selectedDeckName, setSelectedDeckName] = useState<string | null>(null);
-  
+
   // Attempted navigation (for paywall flow)
   const [attemptedDeckId, setAttemptedDeckId] = useState<string | null>(null);
   const [attemptedDeckName, setAttemptedDeckName] = useState<string | null>(null);
@@ -57,13 +57,13 @@ const App: React.FC = () => {
   const [currentConcept, setCurrentConcept] = useState<string>('');
   const [isShuffled, setIsShuffled] = useState(false);
   const [shuffledIndices, setShuffledIndices] = useState<number[]>([]);
-  
+
   // Mastery tracking
   const [masteredIds, setMasteredIds] = useState<Set<string>>(new Set());
-  
-  // Audio state
-  const audioCtxRef = useRef<AudioContext | null>(null);
+
+  // Speech state (browser TTS)
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const ttsUtterRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   // 1. Initial Load - Data and URL parameters for Stripe success/cancel
   useEffect(() => {
@@ -73,6 +73,7 @@ const App: React.FC = () => {
           loadDecks(),
           loadCards()
         ]);
+
         setDecks(loadedDecks);
         setCards(loadedCards);
         setIsDataLoading(false);
@@ -85,7 +86,7 @@ const App: React.FC = () => {
         if (success === 'true') {
           localStorage.setItem('ccna_isPro', 'true');
           setToast({ message: "Payment Successful! Pro Unlocked.", type: 'success' });
-          
+
           // Auto-resume logic
           const resumeId = urlParams.get('deckId');
           const resumeName = urlParams.get('deckName');
@@ -94,7 +95,7 @@ const App: React.FC = () => {
             setSelectedDeckName(resumeName);
             setView('study');
           }
-          
+
           // Clean URL
           window.history.replaceState({}, document.title, window.location.pathname);
         } else if (canceled === 'true') {
@@ -107,6 +108,7 @@ const App: React.FC = () => {
         setIsDataLoading(false);
       }
     };
+
     fetchData();
   }, []);
 
@@ -116,7 +118,9 @@ const App: React.FC = () => {
     if (savedMastery) {
       try {
         setMasteredIds(new Set(JSON.parse(savedMastery)));
-      } catch (e) { console.error("Mastery load failed"); }
+      } catch (e) {
+        console.error("Mastery load failed");
+      }
     }
 
     const savedUser = localStorage.getItem('ccna_user');
@@ -129,7 +133,7 @@ const App: React.FC = () => {
           setUser({ ...parsed, isPro: isProPersistent });
           setView('domainSelect');
         }
-      } catch (e) { 
+      } catch (e) {
         console.error("User session load failed");
         localStorage.removeItem('ccna_user');
       }
@@ -153,6 +157,15 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('ccna_mastery', JSON.stringify(Array.from(masteredIds)));
   }, [masteredIds]);
+
+  // Clean up TTS on unmount
+  useEffect(() => {
+    return () => {
+      try {
+        window.speechSynthesis?.cancel();
+      } catch {}
+    };
+  }, []);
 
   // Dashboard Stats
   const domainStats = useMemo(() => {
@@ -215,10 +228,10 @@ const App: React.FC = () => {
 
   const handleLogin = (asGuest: boolean) => {
     const isProPersistent = localStorage.getItem('ccna_isPro') === 'true';
-    const newUser: User = { 
-      email: asGuest ? 'Guest' : 'user@example.com', 
-      isPro: isProPersistent, 
-      isGuest: asGuest 
+    const newUser: User = {
+      email: asGuest ? 'Guest' : 'user@example.com',
+      isPro: isProPersistent,
+      isGuest: asGuest
     };
     setUser(newUser);
     localStorage.setItem('ccna_user', JSON.stringify(newUser));
@@ -238,11 +251,18 @@ const App: React.FC = () => {
     setAttemptedDeckName(null);
     setCurrentIndex(0);
     setIsShuffled(false);
+
+    // stop speech if any
+    try {
+      window.speechSynthesis.cancel();
+    } catch {}
+    setIsSpeaking(false);
+    ttsUtterRef.current = null;
   };
 
   const handleDeckSelect = (deck: Deck) => {
     const premium = isPremiumValue(deck.is_premium);
-    
+
     if (premium && !user?.isPro) {
       setAttemptedDeckId(deck.deck_id);
       setAttemptedDeckName(deck.deck_name);
@@ -265,21 +285,30 @@ const App: React.FC = () => {
     setMasteredIds(next);
   };
 
-  // const handleSpeak = async (text: string) => {
-    if (!audioCtxRef.current) {
-      audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+  // ✅ Browser-native TTS (no Gemini key required)
+  const handleSpeak = (text: string) => {
+    try {
+      if (!text?.trim()) return;
+
+      // stop any current speech first
+      window.speechSynthesis.cancel();
+
+      const utter = new SpeechSynthesisUtterance(text);
+      ttsUtterRef.current = utter;
+
+      utter.rate = 1;
+      utter.pitch = 1;
+
+      utter.onstart = () => setIsSpeaking(true);
+      utter.onend = () => setIsSpeaking(false);
+      utter.onerror = () => setIsSpeaking(false);
+
+      window.speechSynthesis.speak(utter);
+    } catch (e) {
+      console.error("TTS error:", e);
+      setIsSpeaking(false);
     }
-    if (isSpeaking) return;
-    setIsSpeaking(true);
-  // const buffer = await speakText(text, audioCtxRef.current);
-    if (buffer) {
-      const source = audioCtxRef.current.createBufferSource();
-      source.buffer = buffer;
-      source.connect(audioCtxRef.current.destination);
-      source.onended = () => setIsSpeaking(false);
-      source.start();
-    } else { setIsSpeaking(false); }
-  //};
+  };
 
   const handleExplain = async (concept: string) => {
     setCurrentConcept(concept);
@@ -288,8 +317,11 @@ const App: React.FC = () => {
     try {
       const explanation = await explainConcept(concept, currentCard?.answer || "");
       setAiExplanation(explanation || "No explanation available.");
-    } catch (error) { setAiExplanation("Error connecting to AI tutor."); }
-    finally { setAiLoading(false); }
+    } catch (error) {
+      setAiExplanation("Error connecting to AI tutor.");
+    } finally {
+      setAiLoading(false);
+    }
   };
 
   if (isDataLoading) {
@@ -338,9 +370,9 @@ const App: React.FC = () => {
               {user.isPro && <span className="bg-amber-400 text-amber-900 text-[10px] font-black px-2 py-0.5 rounded-full uppercase ml-1 shadow-sm">PRO</span>}
               {user.isGuest && !user.isPro && <span className="bg-slate-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full uppercase ml-1">Guest</span>}
             </div>
-            <button 
+            <button
               type="button"
-              onClick={handleLogout} 
+              onClick={handleLogout}
               className="text-xs font-bold text-white/50 hover:text-white uppercase tracking-widest transition-colors cursor-pointer outline-none"
             >
               Logout
@@ -366,29 +398,30 @@ const App: React.FC = () => {
         <main className="flex-1 max-w-6xl mx-auto p-6 w-full overflow-y-auto">
           <div className="flex justify-between items-end mb-8">
             <div>
-               <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Learning Dashboard</h2>
-               <p className="text-slate-500 font-medium">Welcome back! Accessing {cards.length} cards across {decks.length} decks.</p>
+              <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Learning Dashboard</h2>
+              <p className="text-slate-500 font-medium">Welcome back! Accessing {cards.length} cards across {decks.length} decks.</p>
             </div>
           </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-10">
             {CCNA_DOMAINS.map((domain) => {
               const stats = domainStats[domain.id] || { total: 0, mastered: 0 };
               const progress = stats.total > 0 ? (stats.mastered / stats.total) * 100 : 0;
               const color = getDomainColor(domain.id);
-              
+
               return (
-                <button 
-                  key={domain.id} 
-                  onClick={() => { 
-                    setSelectedDomainId(domain.id); 
-                    setSelectedDomainName(domain.subtitle); 
-                    setView('deckSelect'); 
-                  }} 
+                <button
+                  key={domain.id}
+                  onClick={() => {
+                    setSelectedDomainId(domain.id);
+                    setSelectedDomainName(domain.subtitle);
+                    setView('deckSelect');
+                  }}
                   style={{ borderLeftColor: color }}
                   className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 border-l-[6px] hover:border-blue-500 hover:shadow-xl transition-all text-left relative overflow-hidden group"
                 >
-                  <div 
-                    className={`absolute top-0 right-0 h-1 transition-all duration-1000 ${progress === 100 ? 'bg-green-500 w-full' : ''}`} 
+                  <div
+                    className={`absolute top-0 right-0 h-1 transition-all duration-1000 ${progress === 100 ? 'bg-green-500 w-full' : ''}`}
                     style={{ width: progress + '%', backgroundColor: progress === 100 ? undefined : color }}
                   ></div>
                   <div className="text-4xl mb-4">{domain.icon}</div>
@@ -408,21 +441,21 @@ const App: React.FC = () => {
       {view === 'deckSelect' && (
         <main className="flex-1 max-w-2xl mx-auto p-6 w-full">
           <div className="flex flex-col gap-6 mb-8">
-            <button 
+            <button
               onClick={() => setView('domainSelect')}
               className="flex items-center gap-2 text-slate-400 hover:text-blue-600 font-bold text-xs uppercase tracking-widest transition-colors w-fit"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
               Back to Domains
             </button>
-            <h2 
+            <h2
               className="text-2xl font-black uppercase tracking-tight"
               style={{ color: getDomainColor(selectedDomainId) }}
             >
               {selectedDomainName ? `${selectedDomainName} Decks` : "Available Decks"}
             </h2>
           </div>
-          
+
           <div className="space-y-4">
             {domainDecksList.map((deck) => {
               const deckCardsCount = cards.filter(c => c.deck_id === deck.deck_id).length;
@@ -431,8 +464,8 @@ const App: React.FC = () => {
               const isLocked = premium && !user?.isPro;
 
               return (
-                <button 
-                  key={deck.deck_id} 
+                <button
+                  key={deck.deck_id}
                   onClick={() => handleDeckSelect(deck)}
                   className={`group w-full bg-white p-6 rounded-2xl border flex justify-between items-center transition-all text-left ${isLocked ? 'border-amber-100 hover:bg-amber-50/50' : 'border-slate-200 hover:border-blue-300 hover:shadow-lg hover:bg-slate-50'}`}
                 >
@@ -452,7 +485,7 @@ const App: React.FC = () => {
                       )}
                     </div>
                   </div>
-                  
+
                   {isLocked ? (
                     <div className="w-10 h-10 bg-amber-50 rounded-full flex items-center justify-center text-amber-500 shadow-inner group-hover:scale-110 transition-transform">
                       <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" /></svg>
@@ -494,7 +527,7 @@ const App: React.FC = () => {
               </div>
 
               {currentCard && (
-                <FlashcardComponent 
+                <FlashcardComponent
                   card={currentCard}
                   isMastered={masteredIds.has(currentCard.id)}
                   onMastered={() => toggleMastery(currentCard.id)}
@@ -525,12 +558,12 @@ const App: React.FC = () => {
             <div>
               <h2 className="text-3xl font-black text-slate-800 tracking-tight">Unlock Pro</h2>
               <p className="text-slate-500 font-medium mt-2 leading-relaxed">
-                The deck <span className="text-slate-800 font-bold">"{attemptedDeckName}"</span> is part of CCNA Mastery Pro. 
+                The deck <span className="text-slate-800 font-bold">"{attemptedDeckName}"</span> is part of CCNA Mastery Pro.
                 Unlock all premium content and advanced AI tutoring today.
               </p>
             </div>
             <div className="space-y-4">
-              <button 
+              <button
                 onClick={() => startStripeCheckout(attemptedDeckId, attemptedDeckName)}
                 className="w-full py-5 bg-amber-500 text-white rounded-2xl font-black text-lg shadow-xl hover:bg-amber-600 hover:scale-[1.02] transition-all transform active:scale-95 flex items-center justify-center gap-2"
               >
@@ -549,7 +582,12 @@ const App: React.FC = () => {
       )}
 
       {(aiExplanation || aiLoading) && (
-        <StudyAssistant concept={currentConcept} explanation={aiExplanation || ""} loading={aiLoading} onClose={() => { setAiExplanation(null); setAiLoading(false); }} />
+        <StudyAssistant
+          concept={currentConcept}
+          explanation={aiExplanation || ""}
+          loading={aiLoading}
+          onClose={() => { setAiExplanation(null); setAiLoading(false); }}
+        />
       )}
     </div>
   );
