@@ -8,3 +8,37 @@ body {
   color: #0f172a;
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
 }
+/* AI Tutor styling */
+.ai-explanation h1,
+.ai-explanation h2,
+.ai-explanation h3 {
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  margin-top: 1.2em;
+  margin-bottom: 0.4em;
+  color: #0f172a; /* slate-900 */
+}
+
+.ai-explanation h3 {
+  border-left: 6px solid #2563eb; /* blue */
+  padding-left: 12px;
+  background: #eff6ff; /* light blue */
+  border-radius: 10px;
+}
+
+.ai-explanation h4 {
+  font-weight: 800;
+  color: #0f172a;
+  margin-top: 1em;
+}
+
+/* Real hashtags inside the explanation (e.g., #OSPF #CCNA) */
+.ai-hashtag {
+  font-weight: 900;
+  color: #7c3aed;      /* purple */
+  background: #f3e8ff; /* light purple */
+  padding: 2px 8px;
+  border-radius: 999px;
+  display: inline-block;
+  margin: 2px 2px;
+}
