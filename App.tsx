@@ -271,7 +271,7 @@ const App: React.FC = () => {
     }
     if (isSpeaking) return;
     setIsSpeaking(true);
-    const buffer = await speakText(text, audioCtxRef.current);
+   ## const buffer = await speakText(text, audioCtxRef.current);
     if (buffer) {
       const source = audioCtxRef.current.createBufferSource();
       source.buffer = buffer;
