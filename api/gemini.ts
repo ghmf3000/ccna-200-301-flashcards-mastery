@@ -1,81 +1,100 @@
+// api/gemini.ts
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-const DEFAULT_MODEL = "gemini-1.5-flash"; // you can change later
+const API_BASE = "https://generativelanguage.googleapis.com/v1beta";
+
+function getKey() {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error("Missing GEMINI_API_KEY environment variable");
+  return key;
+}
+
+async function listModels(key: string) {
+  const r = await fetch(`${API_BASE}/models`, {
+    headers: { "x-goog-api-key": key },
+  });
+  const data = await r.json();
+  return { status: r.status, data };
+}
+
+async function generateContent(key: string, model: string, prompt: string) {
+  const url = `${API_BASE}/models/${encodeURIComponent(model)}:generateContent`;
+
+  const r = await fetch(url, {
+    method: "POST",
+    headers: {
+      "x-goog-api-key": key,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }]}],
+    }),
+  });
+
+  const data = await r.json();
+  return { status: r.status, data };
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // CORS (optional but helpful)
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST,GET,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-
-  if (req.method === "OPTIONS") return res.status(204).end();
-
-  if (req.method === "GET") {
-    return res.status(200).json({ ok: true, hint: "Send POST with { prompt }" });
-  }
-
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
-
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return res.status(500).json({ error: "GEMINI_API_KEY not configured" });
-  }
-
   try {
+    const key = getKey();
+
+    // GET /api/gemini  -> healthcheck (or list models)
+    if (req.method === "GET") {
+      if (req.query.list === "1") {
+        const out = await listModels(key);
+        return res.status(out.status).json(out.data);
+      }
+      return res.status(200).json({ ok: true, hint: "Send POST with { prompt } or GET ?list=1" });
+    }
+
+    if (req.method !== "POST") {
+      return res.status(405).json({ error: "Method not allowed" });
+    }
+
     const { prompt, model } = (req.body ?? {}) as { prompt?: string; model?: string };
 
     if (!prompt || typeof prompt !== "string") {
-      return res.status(400).json({ error: "Prompt is required" });
+      return res.status(400).json({ error: "Missing 'prompt' in JSON body" });
     }
 
-    const useModel = (model && typeof model === "string" ? model : DEFAULT_MODEL).trim();
+    // Default to a model that’s shown in current Gemini API docs examples (v1beta)
+    // You can override by POSTing { model: "..." } or setting GEMINI_MODEL env var.
+    const chosenModel =
+      (typeof model === "string" && model.trim()) ||
+      process.env.GEMINI_MODEL ||
+      "gemini-2.5-flash";
 
-    // REST endpoint (no SDK, no model listing)
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-      useModel
-    )}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const out = await generateContent(key, chosenModel, prompt);
 
-    const body = {
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: prompt }],
-        },
-      ],
-      generationConfig: {
-        temperature: 0.6,
-        maxOutputTokens: 600,
-      },
-    };
-
-    const r = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-
-    const data = await r.json();
-
-    if (!r.ok) {
-      // Return Google’s real error so we can see exactly what’s wrong
-      return res.status(r.status).json({
-        error: "Gemini request failed",
-        status: r.status,
-        details: data,
-        model: useModel,
+    // If model not found, return helpful debug data
+    if (out.status === 404) {
+      return res.status(404).json({
+        error: "Model not found for this API key / endpoint",
+        triedModel: chosenModel,
+        details: out.data,
+        hint: "Open /api/gemini?list=1 to see available models for your key, then use one of those names.",
       });
     }
 
-    const text =
-      data?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text).filter(Boolean).join("") ?? "";
+    if (!String(out.status).startsWith("2")) {
+      return res.status(500).json({
+        error: "Gemini request failed",
+        status: out.status,
+        details: out.data,
+        model: chosenModel,
+      });
+    }
 
-    return res.status(200).json({ ok: true, text, model: useModel });
-  } catch (err: any) {
-    return res.status(500).json({
-      error: "Server error",
-      details: err?.message ?? String(err),
-    });
+    // Extract text safely
+    const text =
+      out.data?.candidates?.[0]?.content?.parts
+        ?.map((p: any) => p?.text)
+        ?.filter(Boolean)
+        ?.join("") ?? "";
+
+    return res.status(200).json({ text, model: chosenModel });
+  } catch (e: any) {
+    return res.status(500).json({ error: e?.message || "Server error" });
   }
 }
