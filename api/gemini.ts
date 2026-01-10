@@ -29,19 +29,13 @@ async function generateContent(key: string, model: string, prompt: string) {
 body: JSON.stringify({
   contents: [
     {
-      parts: [{ text: prompt }]
-    }
+      parts: [{ text: prompt }],
+    },
   ],
   generationConfig: {
     maxOutputTokens: 800,
-    temperature: 0.7
-  }
-}),
-
-  generationConfig: {
-    maxOutputTokens: 400,
-    temperature: 0.65
-  }
+    temperature: 0.7,
+  },
 }),
 });
 
