@@ -1,95 +1,44 @@
-/* AI Tutor modal styling + markdown formatting */
-.aiOverlay{
-  position: fixed; inset: 0;
-  background: rgba(0,0,0,.35);
-  display:flex; align-items:center; justify-content:center;
-  padding: 16px;
-  z-index: 9999;
+html, body, #root {
+  height: 100%;
 }
-.aiModal{
-  width: min(920px, 96vw);
-  max-height: min(80vh, 760px);
-  background: #fff;
-  border-radius: 18px;
-  box-shadow: 0 20px 60px rgba(0,0,0,.25);
-  overflow: hidden;
-  display:flex; flex-direction:column;
+
+body {
+  margin: 0;
+  background-color: #f6f8fb;
+  color: #0f172a;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
 }
-.aiHeader{
-  display:flex; align-items:center; justify-content:space-between;
-  padding: 14px 16px;
-  border-bottom: 1px solid #e7e7e7;
+/* AI Tutor styling */
+.ai-explanation h1,
+.ai-explanation h2,
+.ai-explanation h3 {
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  margin-top: 1.2em;
+  margin-bottom: 0.4em;
+  color: #0f172a; /* slate-900 */
 }
-.aiTitleWrap{display:flex; align-items:center; gap:12px;}
-.aiBadge{
-  width: 34px; height: 34px; border-radius: 10px;
-  display:flex; align-items:center; justify-content:center;
-  background: #eef6ff;
+
+.ai-explanation h3 {
+  border-left: 6px solid #2563eb; /* blue */
+  padding-left: 12px;
+  background: #eff6ff; /* light blue */
+  border-radius: 10px;
 }
-.aiTitle{font-weight: 800;}
-.aiSubtitle{font-size: 12px; opacity:.7; margin-top:2px;}
-.aiClose{
-  border: none; background: transparent; cursor:pointer;
-  font-size: 16px; opacity:.7;
-}
-.aiClose:hover{opacity:1;}
-.aiBody{
-  padding: 16px;
-  overflow:auto;
-}
-.aiFooter{
-  padding: 14px 16px;
-  border-top: 1px solid #e7e7e7;
-  display:flex; justify-content:flex-end;
-}
-.aiOk{
-  border:none; cursor:pointer;
-  background:#0b2239; color:#fff;
-  padding:10px 16px; border-radius: 12px;
+
+.ai-explanation h4 {
   font-weight: 800;
+  color: #0f172a;
+  margin-top: 1em;
 }
 
-/* Markdown defaults */
-.aiMarkdown{line-height:1.55; font-size: 14px;}
-.aiMarkdown h1,.aiMarkdown h2,.aiMarkdown h3{
-  margin: 14px 0 8px;
+/* Real hashtags inside the explanation (e.g., #OSPF #CCNA) */
+.ai-hashtag {
   font-weight: 900;
-}
-.aiMarkdown h3{
-  font-size: 14px;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-}
-.aiMarkdown p{margin: 10px 0;}
-.aiMarkdown ul{margin: 10px 0 10px 18px;}
-.aiMarkdown li{margin: 6px 0;}
-.aiMarkdown code{
-  background:#f3f4f6;
-  padding:2px 6px;
-  border-radius: 8px;
-}
-
-/* “Bold + colorful hashtag-style headings”
-   (This styles markdown headings that start with ### in your AI output) */
-.aiMarkdown h3{
-  color:#0b5bd3;
-}
-.aiMarkdown h3::before{
-  content:"# ";
-  color:#ff4d6d;
-  font-weight: 900;
-}
-
-/* Loading skeleton */
-.aiSkeleton{display:flex; flex-direction:column; gap:10px;}
-.aiShimmerLine{
-  height: 12px; border-radius: 999px;
-  background: linear-gradient(90deg, #eee, #f7f7f7, #eee);
-  background-size: 200% 100%;
-  animation: shimmer 1.1s infinite linear;
-}
-.w60{width:60%} .w70{width:70%} .w80{width:80%} .w85{width:85%} .w90{width:90%}
-@keyframes shimmer{
-  0%{background-position: 200% 0}
-  100%{background-position: -200% 0}
+  color: #7c3aed;      /* purple */
+  background: #f3e8ff; /* light purple */
+  padding: 2px 8px;
+  border-radius: 999px;
+  display: inline-block;
+  margin: 2px 2px;
 }
