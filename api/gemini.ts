@@ -26,7 +26,7 @@ async function generateContent(key: string, model: string, prompt: string) {
       "x-goog-api-key": key,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
+body: JSON.stringify({
   contents: [
     {
       parts: [{ text: prompt }]
