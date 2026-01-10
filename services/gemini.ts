@@ -1,56 +1,50 @@
+// services/gemini.ts
 export async function explainConcept(concept: string, answerContext?: string) {
-  // Keep context from exploding your prompt (which increases latency + cutoffs)
-  const ctx = (answerContext || "").trim();
-  const shortCtx = ctx.length > 800 ? ctx.slice(0, 800) + "\n...(trimmed)" : ctx;
-
   const prompt = `
-You are a CCNA tutor.
-Explain clearly with practical networking examples.
+You are a friendly, human-sounding CCNA tutor (not robotic).
+Explain clearly, concisely, and confidently.
 
-IMPORTANT OUTPUT RULES:
-- Use plain text and short sections.
-- Do NOT use hashtags (#). Use section titles like "Simple explanation:".
-- Keep it complete (no abrupt ending).
+IMPORTANT FORMATTING RULES:
+- Do NOT use Markdown headings (no #, ##, ###).
+- Use plain text labels with line breaks.
+- Keep paragraphs short.
+- Use bullet points where helpful.
 
-Concept: ${concept}
+TOPIC: ${concept}
 
-${shortCtx ? `Answer context:\n${shortCtx}\n` : ""}
+${answerContext ? `ANSWER CONTEXT:\n${answerContext}\n` : ""}
 
-Return exactly these sections:
+Return exactly this structure:
+
 Simple explanation:
+- ...
+
 Real-world example:
+- ...
+
 Key commands (if relevant):
+- ...
+
 Common mistakes:
-`;
+- ...
+`.trim();
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 25000);
+  const res = await fetch("/api/gemini", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      prompt,
+      // You can tune these later. Higher tokens = less cutoffs, slower response.
+      maxOutputTokens: 1400,
+      temperature: 0.6,
+    }),
+  });
 
-  try {
-    const res = await fetch("/api/gemini", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        prompt,
-        // You can also set GEMINI_MODEL in Vercel env vars.
-        // model: "gemini-2.5-flash",
-      }),
-      signal: controller.signal,
-    });
+  const data = await res.json();
 
-    const data = await res.json().catch(() => ({}));
-
-    if (!res.ok) {
-      throw new Error(data?.error || `Gemini API failed (${res.status})`);
-    }
-
-    return (data.text as string) || "No explanation returned.";
-  } catch (e: any) {
-    if (e?.name === "AbortError") {
-      throw new Error("AI Tutor timed out. Try again (or reduce the concept text).");
-    }
-    throw e;
-  } finally {
-    clearTimeout(timeout);
+  if (!res.ok) {
+    throw new Error(data?.error || "Gemini API failed");
   }
+
+  return data.text as string;
 }
