@@ -9,7 +9,7 @@ function getKey() {
   return key;
 }
 
-async function generateContent(key: string, model: string, prompt: string, maxOutputTokens = 900) {
+async function generateContent(key: string, model: string, prompt: string, maxOutputTokens: number) {
   const url = `${API_BASE}/models/${encodeURIComponent(model)}:generateContent`;
 
   const r = await fetch(url, {
@@ -31,7 +31,6 @@ async function generateContent(key: string, model: string, prompt: string, maxOu
   return { status: r.status, data };
 }
 
-// Extract text from Gemini response (handles multiple parts safely)
 function extractText(data: any): string {
   const parts = data?.candidates?.[0]?.content?.parts;
   if (!Array.isArray(parts)) return "";
@@ -51,6 +50,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const { prompt, model } = (req.body ?? {}) as { prompt?: string; model?: string };
+
     if (!prompt || typeof prompt !== "string") {
       return res.status(400).json({ error: "Missing 'prompt' in JSON body" });
     }
@@ -60,8 +60,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       process.env.GEMINI_MODEL ||
       "gemini-2.5-flash";
 
-    // 1st attempt
-    const out1 = await generateContent(key, chosenModel, prompt, 900);
+    // First call (bigger cap)
+    const out1 = await generateContent(key, chosenModel, prompt, 1400);
 
     if (!String(out1.status).startsWith("2")) {
       return res.status(500).json({
@@ -73,25 +73,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     let text = extractText(out1.data);
-    const finishReason = out1.data?.candidates?.[0]?.finishReason;
+    let finishReason = out1.data?.candidates?.[0]?.finishReason;
 
-    // If truncated, do ONE continuation call
-    if (finishReason === "MAX_TOKENS" && text.length > 0) {
+    // Auto-continue up to TWO times if truncated
+    for (let i = 0; i < 2 && finishReason === "MAX_TOKENS" && text.trim().length > 0; i++) {
       const continuePrompt =
-        `Continue EXACTLY where you left off. Do not repeat. ` +
-        `Pick up mid-sentence if needed.\n\n---\n\nPREVIOUS OUTPUT:\n${text}\n\n---\n\nCONTINUE:`;
+        `Continue EXACTLY where you left off. Do NOT repeat earlier text.\n\n` +
+        `---\nPREVIOUS OUTPUT:\n${text}\n---\nCONTINUE:`;
 
-      const out2 = await generateContent(key, chosenModel, continuePrompt, 700);
+      const outN = await generateContent(key, chosenModel, continuePrompt, 1200);
 
-      if (String(out2.status).startsWith("2")) {
-        const text2 = extractText(out2.data);
-        if (text2) text = text + "\n\n" + text2;
-      }
-    }
+      if (!String(outN.status).startsWith("2")) break;
 
-    // If Gemini returns empty (rare), send a helpful fallback
-    if (!text.trim()) {
-      text = "I couldn’t generate a full explanation for that one. Try again or ask a slightly different question.";
+      const more = extractText(outN.data);
+      if (!more.trim()) break;
+
+      text = text + "\n\n" + more;
+      finishReason = outN.data?.candidates?.[0]?.finishReason;
     }
 
     return res.status(200).json({ text, model: chosenModel, finishReason });
