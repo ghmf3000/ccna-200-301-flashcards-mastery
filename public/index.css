@@ -1,44 +1,58 @@
-html, body, #root {
-  height: 100%;
+/* =====================================================
+   Global base styles for CCNA Mastery
+   (NO Tailwind directives here)
+   ===================================================== */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
+html,
 body {
   margin: 0;
-  background-color: #f6f8fb;
-  color: #0f172a;
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-}
-/* AI Tutor styling */
-.ai-explanation h1,
-.ai-explanation h2,
-.ai-explanation h3 {
-  font-weight: 900;
-  letter-spacing: -0.02em;
-  margin-top: 1.2em;
-  margin-bottom: 0.4em;
+  padding: 0;
+  height: 100%;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+  background-color: #f8fafc; /* slate-50 */
   color: #0f172a; /* slate-900 */
 }
 
-.ai-explanation h3 {
-  border-left: 6px solid #2563eb; /* blue */
-  padding-left: 12px;
-  background: #eff6ff; /* light blue */
-  border-radius: 10px;
+#root {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
-.ai-explanation h4 {
-  font-weight: 800;
-  color: #0f172a;
-  margin-top: 1em;
+/* Prevent image overflow */
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
+  height: auto;
 }
 
-/* Real hashtags inside the explanation (e.g., #OSPF #CCNA) */
-.ai-hashtag {
-  font-weight: 900;
-  color: #7c3aed;      /* purple */
-  background: #f3e8ff; /* light purple */
-  padding: 2px 8px;
-  border-radius: 999px;
-  display: inline-block;
-  margin: 2px 2px;
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Buttons reset */
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* Remove ugly focus outlines, keep accessibility */
+:focus-visible {
+  outline: 2px solid #2563eb; /* blue-600 */
+  outline-offset: 2px;
+}
+
+/* Simple utility (safe) */
+.hidden {
+  display: none !important;
 }
