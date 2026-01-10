@@ -9,7 +9,31 @@ function getKey() {
   return key;
 }
 
-async function generateContent(key: string, model: string, prompt: string, maxOutputTokens: number) {
+async function listModels(key: string) {
+  const r = await fetch(`${API_BASE}/models`, {
+    headers: { "x-goog-api-key": key },
+  });
+  const data = await r.json();
+  return { status: r.status, data };
+}
+
+type GenResult = {
+  status: number;
+  data: any;
+  text: string;
+  finishReason?: string;
+};
+
+function extractText(data: any): string {
+  const parts = data?.candidates?.[0]?.content?.parts ?? [];
+  return parts.map((p: any) => p?.text).filter(Boolean).join("");
+}
+
+function getFinishReason(data: any): string | undefined {
+  return data?.candidates?.[0]?.finishReason;
+}
+
+async function generateOnce(key: string, model: string, prompt: string): Promise<GenResult> {
   const url = `${API_BASE}/models/${encodeURIComponent(model)}:generateContent`;
 
   const r = await fetch(url, {
@@ -20,29 +44,34 @@ async function generateContent(key: string, model: string, prompt: string, maxOu
     },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
+      // Higher limit reduces cutoffs; still safe for speed.
       generationConfig: {
-        maxOutputTokens,
+        maxOutputTokens: 1400,
         temperature: 0.6,
       },
     }),
   });
 
   const data = await r.json();
-  return { status: r.status, data };
-}
-
-function extractText(data: any): string {
-  const parts = data?.candidates?.[0]?.content?.parts;
-  if (!Array.isArray(parts)) return "";
-  return parts.map((p: any) => p?.text).filter(Boolean).join("");
+  return {
+    status: r.status,
+    data,
+    text: extractText(data),
+    finishReason: getFinishReason(data),
+  };
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const key = getKey();
 
+    // GET /api/gemini (healthcheck) or /api/gemini?list=1 (debug models)
     if (req.method === "GET") {
-      return res.status(200).json({ ok: true, hint: "Send POST with { prompt }" });
+      if (req.query.list === "1") {
+        const out = await listModels(key);
+        return res.status(out.status).json(out.data);
+      }
+      return res.status(200).json({ ok: true, hint: "POST { prompt }" });
     }
 
     if (req.method !== "POST") {
@@ -60,39 +89,61 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       process.env.GEMINI_MODEL ||
       "gemini-2.5-flash";
 
-    // First call (bigger cap)
-    const out1 = await generateContent(key, chosenModel, prompt, 1400);
+    // 1) First attempt
+    let out = await generateOnce(key, chosenModel, prompt);
 
-    if (!String(out1.status).startsWith("2")) {
+    // Helpful 404 response
+    if (out.status === 404) {
+      return res.status(404).json({
+        error: "Model not found for this API key / endpoint",
+        triedModel: chosenModel,
+        details: out.data,
+        hint: "Open /api/gemini?list=1 to see available models for your key.",
+      });
+    }
+
+    if (!String(out.status).startsWith("2")) {
       return res.status(500).json({
         error: "Gemini request failed",
-        status: out1.status,
-        details: out1.data,
+        status: out.status,
+        details: out.data,
         model: chosenModel,
       });
     }
 
-    let text = extractText(out1.data);
-    let finishReason = out1.data?.candidates?.[0]?.finishReason;
+    // 2) Auto-continue ONLY if it was cut off
+    let fullText = out.text;
+    let safetyCounter = 0;
 
-    // Auto-continue up to TWO times if truncated
-    for (let i = 0; i < 2 && finishReason === "MAX_TOKENS" && text.trim().length > 0; i++) {
-      const continuePrompt =
-        `Continue EXACTLY where you left off. Do NOT repeat earlier text.\n\n` +
-        `---\nPREVIOUS OUTPUT:\n${text}\n---\nCONTINUE:`;
+    while (out.finishReason === "MAX_TOKENS" && safetyCounter < 2) {
+      safetyCounter++;
 
-      const outN = await generateContent(key, chosenModel, continuePrompt, 1200);
+      const continuationPrompt = [
+        "Continue EXACTLY where you left off.",
+        "Do NOT restart, do NOT repeat headings, do NOT add introductions.",
+        "Output ONLY the remaining content.",
+        "-----",
+        "CONTENT SO FAR:",
+        fullText,
+      ].join("\n");
 
-      if (!String(outN.status).startsWith("2")) break;
+      out = await generateOnce(key, chosenModel, continuationPrompt);
 
-      const more = extractText(outN.data);
-      if (!more.trim()) break;
+      if (!String(out.status).startsWith("2")) break;
 
-      text = text + "\n\n" + more;
-      finishReason = outN.data?.candidates?.[0]?.finishReason;
+      const more = out.text?.trim();
+      if (!more) break;
+
+      // Avoid accidental duplication
+      if (!fullText.endsWith("\n")) fullText += "\n";
+      fullText += more;
     }
 
-    return res.status(200).json({ text, model: chosenModel, finishReason });
+    return res.status(200).json({
+      text: fullText,
+      model: chosenModel,
+      finishReason: out.finishReason || "STOP",
+    });
   } catch (e: any) {
     return res.status(500).json({ error: e?.message || "Server error" });
   }
