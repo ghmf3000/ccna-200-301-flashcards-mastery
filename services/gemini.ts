@@ -1,63 +1,56 @@
-// services/gemini.ts
+export async function explainConcept(concept: string, answerContext?: string) {
+  // Keep context from exploding your prompt (which increases latency + cutoffs)
+  const ctx = (answerContext || "").trim();
+  const shortCtx = ctx.length > 800 ? ctx.slice(0, 800) + "\n...(trimmed)" : ctx;
 
-const cache = new Map<string, string>();
+  const prompt = `
+You are a CCNA tutor.
+Explain clearly with practical networking examples.
 
-function cacheKey(prompt: string) {
-  return prompt.trim().slice(0, 5000); // enough uniqueness without huge keys
-}
+IMPORTANT OUTPUT RULES:
+- Use plain text and short sections.
+- Do NOT use hashtags (#). Use section titles like "Simple explanation:".
+- Keep it complete (no abrupt ending).
 
-async function postGemini(prompt: string) {
+Concept: ${concept}
+
+${shortCtx ? `Answer context:\n${shortCtx}\n` : ""}
+
+Return exactly these sections:
+Simple explanation:
+Real-world example:
+Key commands (if relevant):
+Common mistakes:
+`;
+
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000); // 15s timeout
+  const timeout = setTimeout(() => controller.abort(), 25000);
 
   try {
     const res = await fetch("/api/gemini", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt }),
+      body: JSON.stringify({
+        prompt,
+        // You can also set GEMINI_MODEL in Vercel env vars.
+        // model: "gemini-2.5-flash",
+      }),
       signal: controller.signal,
     });
 
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
 
     if (!res.ok) {
-      throw new Error(data?.error || "Gemini API failed");
+      throw new Error(data?.error || `Gemini API failed (${res.status})`);
     }
 
-    return (data.text as string) || "";
+    return (data.text as string) || "No explanation returned.";
+  } catch (e: any) {
+    if (e?.name === "AbortError") {
+      throw new Error("AI Tutor timed out. Try again (or reduce the concept text).");
+    }
+    throw e;
   } finally {
     clearTimeout(timeout);
-  }
-}
-
-export async function explainConcept(concept: string, answerContext?: string) {
-  // Keep prompt shorter (faster) but structured
-  const prompt = `You are a friendly CCNA tutor.
-Explain clearly and concisely, with one practical example.
-
-Concept: ${concept}
-${answerContext ? `Answer context: ${answerContext}` : ""}
-
-Return EXACTLY in this format:
-1) Simple explanation (2-4 sentences)
-2) Real-world example (2-4 sentences)
-3) Key commands (bullets, if any)
-4) Common mistakes (bullets)
-`;
-
-  const key = cacheKey(prompt);
-  const cached = cache.get(key);
-  if (cached) return cached;
-
-  // Try once, then retry one time if it fails
-  try {
-    const text = await postGemini(prompt);
-    cache.set(key, text);
-    return text;
-  } catch (e) {
-    // retry once
-    const text = await postGemini(prompt);
-    cache.set(key, text);
-    return text;
   }
 }

@@ -1,6 +1,6 @@
-import React, { useMemo } from "react";
-import { marked } from "marked";
-import DOMPurify from "dompurify";
+import React from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 type Props = {
   concept: string;
@@ -9,56 +9,49 @@ type Props = {
   onClose: () => void;
 };
 
-function wrapHashtags(html: string) {
-  // Wrap hashtags like #OSPF, #CCNA-Tips (not headings)
-  return html.replace(/(^|\s)(#[\w-]+)/g, '$1<span class="ai-hashtag">$2</span>');
-}
-
-export default function StudyAssistant({ concept, explanation, loading, onClose }: Props) {
-  const html = useMemo(() => {
-    const raw = marked.parse(explanation || "");
-    const safe = DOMPurify.sanitize(String(raw));
-    return wrapHashtags(safe);
-  }, [explanation]);
-
+const StudyAssistant: React.FC<Props> = ({ concept, explanation, loading, onClose }) => {
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-2xl rounded-3xl bg-white shadow-2xl overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b">
-          <div>
-            <div className="text-sm font-black text-slate-800">AI Tutor</div>
-            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
-              Deep Dive: {concept}
+    <div className="aiOverlay" role="dialog" aria-modal="true">
+      <div className="aiModal">
+        <div className="aiHeader">
+          <div className="aiTitleWrap">
+            <div className="aiBadge">⚡</div>
+            <div>
+              <div className="aiTitle">AI Tutor</div>
+              <div className="aiSubtitle">Deep dive: {concept}</div>
             </div>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-xl">×</button>
+          <button className="aiClose" onClick={onClose} aria-label="Close">
+            ✕
+          </button>
         </div>
 
-        <div className="max-h-[70vh] overflow-y-auto px-6 py-5">
+        <div className="aiBody">
           {loading ? (
-            <div className="space-y-3 animate-pulse">
-              <div className="h-4 bg-slate-200 rounded w-3/4" />
-              <div className="h-4 bg-slate-200 rounded w-full" />
-              <div className="h-4 bg-slate-200 rounded w-11/12" />
-              <div className="h-4 bg-slate-200 rounded w-2/3" />
+            <div className="aiSkeleton">
+              <div className="aiShimmerLine w80" />
+              <div className="aiShimmerLine w60" />
+              <div className="aiShimmerLine w90" />
+              <div className="aiShimmerLine w70" />
+              <div className="aiShimmerLine w85" />
             </div>
           ) : (
-            <div
-              className="ai-explanation prose prose-slate max-w-none"
-              dangerouslySetInnerHTML={{ __html: html }}
-            />
+            <div className="aiMarkdown">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {explanation || "No explanation returned."}
+              </ReactMarkdown>
+            </div>
           )}
         </div>
 
-        <div className="px-6 py-4 border-t flex justify-end">
-          <button
-            onClick={onClose}
-            className="px-5 py-2.5 rounded-xl bg-slate-900 text-white font-bold hover:bg-slate-800"
-          >
+        <div className="aiFooter">
+          <button className="aiOk" onClick={onClose}>
             Got it, thanks!
           </button>
         </div>
       </div>
     </div>
   );
-}
+};
+
+export default StudyAssistant;
