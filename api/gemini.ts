@@ -27,7 +27,17 @@ async function generateContent(key: string, model: string, prompt: string) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-  contents: [{ parts: [{ text: prompt }]}],
+  contents: [
+    {
+      parts: [{ text: prompt }]
+    }
+  ],
+  generationConfig: {
+    maxOutputTokens: 800,
+    temperature: 0.7
+  }
+}),
+
   generationConfig: {
     maxOutputTokens: 400,
     temperature: 0.65
