@@ -310,7 +310,7 @@ const App: React.FC = () => {
     }
   };
 
-const handleExplain = async (concept: string) => {
+ const handleExplain = async (concept: string) => {
   // 1) Open the AI Tutor instantly
   setCurrentConcept(concept);
   setAiLoading(true);
