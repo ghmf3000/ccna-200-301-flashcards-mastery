@@ -20,7 +20,6 @@ function useTypewriter(text: string, enabled: boolean, speedMs = 12) {
     setOut("");
     if (!text) return;
 
-    // word-by-word
     const words = text.split(/\s+/);
     let i = 0;
     const timer = setInterval(() => {
@@ -48,41 +47,147 @@ const Bullets: React.FC<{ items: string[] }> = ({ items }) => {
   if (!items?.length) return <p className="text-sm text-slate-500">—</p>;
   return (
     <ul className="list-disc pl-5 space-y-1 text-sm text-slate-800">
-      {items.map((x, i) => <li key={i}>{x}</li>)}
+      {items.map((x, i) => (
+        <li key={i}>{x}</li>
+      ))}
     </ul>
   );
 };
 
+// ---------- Robust normalizers (fix the “raw JSON blob” problem) ----------
+function extractJsonBlock(s: string): string | null {
+  if (!s) return null;
+  const first = s.indexOf("{");
+  const last = s.lastIndexOf("}");
+  if (first === -1 || last === -1 || last <= first) return null;
+  return s.slice(first, last + 1);
+}
+
+function tryParseJson(s: string): any | null {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
+}
+
+function looksLikeJsonBlob(s: string) {
+  if (!s) return false;
+  const t = s.trim();
+  return t.startsWith("{") && t.includes('"simpleExplanation"') && t.includes('"title"');
+}
+
+function cleanText(s?: string) {
+  if (!s) return "";
+  let t = String(s);
+
+  // remove code fences if any
+  t = t.replace(/```(?:json)?/gi, "").replace(/```/g, "");
+
+  // trim
+  t = t.trim();
+
+  // remove “hashtag headers” that break your UI (### etc.)
+  t = t
+    .split("\n")
+    .filter((line) => !/^\s*#+\s*/.test(line)) // lines starting with ###, ##
+    .join("\n")
+    .trim();
+
+  return t;
+}
+
+function toStringArray(v: any): string[] {
+  if (!v) return [];
+  if (Array.isArray(v)) return v.map((x) => cleanText(String(x))).filter(Boolean);
+
+  // If a single string was returned, split on new lines / bullets
+  const s = cleanText(String(v));
+  if (!s) return [];
+
+  return s
+    .split(/\n|•|·|\u2022|-\s+/g)
+    .map((x) => cleanText(x))
+    .filter(Boolean);
+}
+
+function normalizeResult(input: AiTutorResult | null): AiTutorResult | null {
+  if (!input) return null;
+
+  // Sometimes the whole JSON ends up inside simpleExplanation or title, etc.
+  const candidates = [
+    (input as any)?.simpleExplanation,
+    (input as any)?.title,
+    (input as any)?.raw,
+    (input as any)?.text,
+  ]
+    .map((x) => (typeof x === "string" ? x : ""))
+    .filter(Boolean);
+
+  for (const c of candidates) {
+    const trimmed = c.trim();
+    const jsonBlock = looksLikeJsonBlob(trimmed) ? trimmed : extractJsonBlock(trimmed);
+    if (!jsonBlock) continue;
+
+    const parsed = tryParseJson(jsonBlock);
+    if (parsed && typeof parsed === "object") {
+      // Merge parsed object into current result, parsed wins
+      const merged: any = { ...(input as any), ...parsed };
+
+      // Normalize fields so UI never breaks
+      merged.title = cleanText(merged.title) || "AI Tutor";
+      merged.simpleExplanation = cleanText(merged.simpleExplanation);
+      merged.realWorldExample = cleanText(merged.realWorldExample);
+      merged.keyCommands = toStringArray(merged.keyCommands);
+      merged.commonMistakes = toStringArray(merged.commonMistakes);
+      merged.quickCheck = toStringArray(merged.quickCheck);
+
+      return merged as AiTutorResult;
+    }
+  }
+
+  // Normal path: just clean/normalize
+  const out: any = { ...(input as any) };
+  out.title = cleanText(out.title) || "AI Tutor";
+  out.simpleExplanation = cleanText(out.simpleExplanation);
+  out.realWorldExample = cleanText(out.realWorldExample);
+  out.keyCommands = toStringArray(out.keyCommands);
+  out.commonMistakes = toStringArray(out.commonMistakes);
+  out.quickCheck = toStringArray(out.quickCheck);
+  return out as AiTutorResult;
+}
+// ----------------------------------------------------------------------
+
 export default function StudyAssistant({ concept, result, loading, onClose }: Props) {
-  // Build one “streaming” block (so it feels instant like ChatGPT)
+  const normalized = useMemo(() => normalizeResult(result), [result]);
+
+  // Build one “streaming” block (instant feel)
   const streamText = useMemo(() => {
-    if (!result) return "";
+    if (!normalized) return "";
     const parts = [
-      result.simpleExplanation?.trim(),
-      result.realWorldExample?.trim() ? `Example: ${result.realWorldExample.trim()}` : "",
-      (result.keyCommands?.length ? `Commands: ${result.keyCommands.join(" • ")}` : ""),
+      normalized.simpleExplanation?.trim(),
+      normalized.realWorldExample?.trim() ? `Example: ${normalized.realWorldExample.trim()}` : "",
+      normalized.keyCommands?.length ? `Commands: ${normalized.keyCommands.join(" • ")}` : "",
     ].filter(Boolean);
     return parts.join("\n\n");
-  }, [result]);
+  }, [normalized]);
 
-  const typed = useTypewriter(streamText, true, 10);
+  // Only typewriter when we have real text (and not accidentally a JSON blob)
+  const typewriterEnabled = !!streamText && !loading && streamText.length > 10 && !looksLikeJsonBlob(streamText);
+  const typed = useTypewriter(streamText, typewriterEnabled, 10);
+
+  const missing = (s?: string) => !s || !s.trim();
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
       {/* Backdrop */}
-      <button
-        aria-label="Close AI Tutor"
-        onClick={onClose}
-        className="absolute inset-0 bg-black/40"
-      />
+      <button aria-label="Close AI Tutor" onClick={onClose} className="absolute inset-0 bg-black/40" />
 
       {/* Modal */}
       <div className="relative w-full max-w-3xl bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
         <div className="p-5 flex items-start justify-between border-b border-slate-200">
           <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-blue-50 flex items-center justify-center">
-              ⚡
-            </div>
+            <div className="w-10 h-10 rounded-2xl bg-blue-50 flex items-center justify-center">⚡</div>
             <div>
               <div className="text-sm font-black text-slate-900">AI Tutor</div>
               <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
@@ -91,10 +196,7 @@ export default function StudyAssistant({ concept, result, loading, onClose }: Pr
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="w-10 h-10 rounded-full hover:bg-slate-100 text-slate-500 font-black"
-          >
+          <button onClick={onClose} className="w-10 h-10 rounded-full hover:bg-slate-100 text-slate-500 font-black">
             ×
           </button>
         </div>
@@ -107,44 +209,46 @@ export default function StudyAssistant({ concept, result, loading, onClose }: Pr
             </div>
           )}
 
-          {!loading && result && (
+          {!loading && normalized && (
             <>
-              {/* Typewriter preview (feels instant) */}
-              <div className="whitespace-pre-wrap text-sm text-slate-800 bg-white border border-slate-200 rounded-2xl p-4">
-                {typed}
-              </div>
+              {/* Typewriter preview */}
+              {!!streamText && (
+                <div className="whitespace-pre-wrap text-sm text-slate-800 bg-white border border-slate-200 rounded-2xl p-4">
+                  {typed}
+                </div>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Section title="Simple explanation">
                   <p className="text-sm text-slate-800 whitespace-pre-wrap">
-                    {result.simpleExplanation || "—"}
+                    {missing(normalized.simpleExplanation) ? "—" : normalized.simpleExplanation}
                   </p>
                 </Section>
 
                 <Section title="Real-world example">
                   <p className="text-sm text-slate-800 whitespace-pre-wrap">
-                    {result.realWorldExample || "—"}
+                    {missing(normalized.realWorldExample) ? "—" : normalized.realWorldExample}
                   </p>
                 </Section>
 
                 <Section title="Key commands">
-                  <Bullets items={result.keyCommands || []} />
+                  <Bullets items={normalized.keyCommands || []} />
                 </Section>
 
                 <Section title="Common mistakes">
-                  <Bullets items={result.commonMistakes || []} />
+                  <Bullets items={normalized.commonMistakes || []} />
                 </Section>
 
                 <div className="md:col-span-2">
                   <Section title="Quick check">
-                    <Bullets items={result.quickCheck || []} />
+                    <Bullets items={normalized.quickCheck || []} />
                   </Section>
                 </div>
               </div>
             </>
           )}
 
-          {!loading && !result && (
+          {!loading && !normalized && (
             <p className="text-sm text-slate-600">
               No explanation yet. Click <b>AI Explain</b> again.
             </p>
