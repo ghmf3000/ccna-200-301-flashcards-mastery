@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { CCNA_DOMAINS, CCNA_Category, Deck, Card, User } from './types';
 import FlashcardComponent from './components/FlashcardComponent';
 import StudyAssistant from './components/StudyAssistant';
-import { explainConceptStream, parseTutorSectionsFromText } from './services/gemini';
+import { explainConcept, type AiTutorResult } from './services/gemini';
 import { loadDecks, loadCards } from './services/csvParser';
 import { startStripeCheckout } from './services/stripe';
 
@@ -52,7 +52,7 @@ const App: React.FC = () => {
 
   // Study state
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [aiExplanation, setAiExplanation] = useState<string | null>(null);
+  const [aiExplanation, setAiExplanation] = useState<AiTutorResult | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [currentConcept, setCurrentConcept] = useState<string>('');
   const [isShuffled, setIsShuffled] = useState(false);
@@ -311,37 +311,27 @@ const App: React.FC = () => {
   };
 
  const handleExplain = async (concept: string) => {
-  // 1) Open the AI Tutor instantly
   setCurrentConcept(concept);
+
+  // Instant UI: open modal immediately
   setAiLoading(true);
-  setAiExplanation(""); // clear old output
+  setAiExplanation(null);
 
-  const answerContext = currentCard?.answer || "";
-
-  let liveText = "";
-
-  await explainConceptStream({
-    concept,
-    answerContext,
-
-    // 2) Streaming updates -> feels instant
-    onToken: (delta) => {
-      liveText += delta;
-      setAiExplanation(liveText);
-    },
-
-    // 3) When done -> normalize into strict JSON for clean card rendering
-    onDone: (finalText) => {
-      const parsed = parseTutorSectionsFromText(finalText);
-      setAiExplanation(JSON.stringify(parsed));
-      setAiLoading(false);
-    },
-
-    onError: (msg) => {
-      setAiExplanation(msg);
-      setAiLoading(false);
-    },
-  });
+  try {
+    const result = await explainConcept(concept, currentCard?.answer || "");
+    setAiExplanation(result);
+  } catch (error) {
+    setAiExplanation({
+      title: "AI Tutor",
+      simpleExplanation: "Error connecting to AI tutor.",
+      realWorldExample: "",
+      keyCommands: [],
+      commonMistakes: [],
+      quickCheck: [],
+    });
+  } finally {
+    setAiLoading(false);
+  }
 };
 
 
@@ -603,13 +593,16 @@ const App: React.FC = () => {
       )}
 
       {(aiExplanation || aiLoading) && (
-        <StudyAssistant
-          concept={currentConcept}
-          explanation={aiExplanation || ""}
-          loading={aiLoading}
-          onClose={() => { setAiExplanation(null); setAiLoading(false); }}
-        />
-      )}
+  <StudyAssistant
+    concept={currentConcept}
+    result={aiExplanation}
+    loading={aiLoading}
+    onClose={() => {
+      setAiExplanation(null);
+      setAiLoading(false);
+    }}
+  />
+)}
     </div>
   );
 };
