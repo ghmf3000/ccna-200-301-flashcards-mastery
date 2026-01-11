@@ -1,180 +1,187 @@
-import React, { useEffect } from "react";
+// components/StudyAssistant.tsx
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { parseTutorSectionsFromText, TutorSections } from "../services/gemini";
 
 type Props = {
   concept: string;
-  explanation: string;
+  explanation: string; // you can keep passing this; we handle both
   loading: boolean;
   onClose: () => void;
 };
 
-function formatPlainText(text: string) {
-  // Basic cleanup so Gemini output looks consistent without markdown rendering
-  return (text || "")
-    .replace(/\r\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+function splitWordsKeepingSpaces(text: string) {
+  // Keeps spaces so typing looks natural
+  return text.split(/(\s+)/);
 }
 
-export default function StudyAssistant({ concept, explanation, loading, onClose }: Props) {
-  // Close on ESC
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [onClose]);
+const Card: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
+  <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+    <div className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-2">
+      {title}
+    </div>
+    <div className="text-slate-800 leading-relaxed text-sm">{children}</div>
+  </div>
+);
 
-  const text = formatPlainText(explanation);
+export default function StudyAssistant({ concept, explanation, loading, onClose }: Props) {
+  // We support both “full text” or JSON-like content
+  const [sections, setSections] = useState<TutorSections | null>(null);
+
+  // Typing effect state
+  const [typedText, setTypedText] = useState("");
+  const typingQueueRef = useRef<string[]>([]);
+  const typingTimerRef = useRef<number | null>(null);
+
+  const fullText = (explanation || "").trim();
+
+  // If explanation changes (from streaming updates), update typing queue
+  useEffect(() => {
+    // If the explanation is JSON-ish, we’ll parse at end;
+    // While streaming, we show typedText.
+    // Here we only “type” the raw incoming text.
+    if (!fullText) return;
+
+    // Reset typing if concept changed significantly
+    setTypedText("");
+
+    const tokens = splitWordsKeepingSpaces(fullText);
+    typingQueueRef.current = tokens;
+
+    if (typingTimerRef.current) window.clearInterval(typingTimerRef.current);
+
+    typingTimerRef.current = window.setInterval(() => {
+      const q = typingQueueRef.current;
+      if (q.length === 0) {
+        if (typingTimerRef.current) window.clearInterval(typingTimerRef.current);
+        typingTimerRef.current = null;
+
+        // Once typing done, parse to sections (cards)
+        const parsed = parseTutorSectionsFromText(fullText);
+        setSections(parsed);
+        return;
+      }
+
+      // Pull 1–3 tokens per tick for speed
+      const chunk = q.splice(0, 3).join("");
+      setTypedText((prev) => prev + chunk);
+    }, 20);
+
+    return () => {
+      if (typingTimerRef.current) window.clearInterval(typingTimerRef.current);
+      typingTimerRef.current = null;
+    };
+  }, [concept, fullText]);
+
+  const showCards = useMemo(() => {
+    if (!sections) return false;
+
+    const hasAny =
+      (sections.simpleExplanation && sections.simpleExplanation.trim()) ||
+      (sections.realWorldExample && sections.realWorldExample.trim()) ||
+      (sections.keyCommands && sections.keyCommands.length) ||
+      (sections.commonMistakes && sections.commonMistakes.length) ||
+      (sections.quickCheck && sections.quickCheck.length);
+
+    return Boolean(hasAny);
+  }, [sections]);
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 9999,
-        background: "rgba(15, 23, 42, 0.55)", // slate-900 overlay
-        backdropFilter: "blur(6px)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 16,
-      }}
-      onClick={onClose}
-      aria-modal="true"
-      role="dialog"
-    >
-      <div
-        style={{
-          width: "min(920px, 96vw)",
-          maxHeight: "min(78vh, 780px)",
-          background: "#ffffff",
-          borderRadius: 24,
-          boxShadow: "0 20px 70px rgba(0,0,0,0.35)",
-          overflow: "hidden",
-          border: "1px solid rgba(226,232,240,1)", // slate-200
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "flex-start",
-            justifyContent: "space-between",
-            gap: 12,
-            padding: "18px 20px",
-            borderBottom: "1px solid rgba(226,232,240,1)",
-          }}
-        >
-          <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-            <div
-              style={{
-                width: 34,
-                height: 34,
-                borderRadius: 12,
-                background: "rgba(37, 99, 235, 0.12)",
-                display: "grid",
-                placeItems: "center",
-                flexShrink: 0,
-              }}
-              aria-hidden="true"
-            >
-              ⚡
-            </div>
-
-            <div>
-              <div style={{ fontWeight: 800, color: "#0f172a" }}>AI Tutor</div>
-              <div
-                style={{
-                  marginTop: 2,
-                  fontSize: 12,
-                  letterSpacing: 1,
-                  color: "#64748b",
-                  textTransform: "uppercase",
-                  fontWeight: 700,
-                }}
-              >
-                Deep Dive: {concept || "Explanation"}
+    <div className="fixed inset-0 z-[200] bg-black/40 flex items-center justify-center p-4">
+      <div className="w-full max-w-3xl bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
+        <div className="flex items-start justify-between p-5 border-b border-slate-100">
+          <div>
+            <div className="flex items-center gap-2">
+              <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 font-black">
+                ⚡
+              </div>
+              <div>
+                <div className="text-sm font-black text-slate-800">AI Tutor</div>
+                <div className="text-[11px] font-black uppercase tracking-widest text-slate-400">
+                  Deep dive: {concept}
+                </div>
               </div>
             </div>
           </div>
 
           <button
             onClick={onClose}
-            style={{
-              border: "none",
-              background: "transparent",
-              fontSize: 22,
-              lineHeight: "22px",
-              cursor: "pointer",
-              color: "#64748b",
-              padding: 8,
-              borderRadius: 12,
-            }}
+            className="text-slate-400 hover:text-slate-700 font-black text-lg px-2"
             aria-label="Close"
-            title="Close"
           >
             ×
           </button>
         </div>
 
-        {/* Body */}
-        <div style={{ padding: 20 }}>
-          {loading ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 10, color: "#334155" }}>
-              <div
-                style={{
-                  width: 18,
-                  height: 18,
-                  borderRadius: "999px",
-                  border: "3px solid rgba(37,99,235,0.25)",
-                  borderTopColor: "rgba(37,99,235,1)",
-                  animation: "spin 0.9s linear infinite",
-                }}
-              />
-              <div style={{ fontWeight: 700 }}>Generating explanation…</div>
+        <div className="p-5 max-h-[70vh] overflow-y-auto">
+          {loading && !fullText && (
+            <div className="flex items-center gap-3 text-slate-500">
+              <div className="w-5 h-5 border-2 border-slate-300 border-t-transparent rounded-full animate-spin"></div>
+              <div className="text-sm font-semibold">Thinking…</div>
+            </div>
+          )}
 
-              <style>
-                {`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}
-              </style>
+          {/* While streaming / typing */}
+          {!showCards && typedText && (
+            <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-800">
+              {typedText}
+              <span className="inline-block w-2 animate-pulse">▍</span>
             </div>
-          ) : (
-            <div
-              style={{
-                whiteSpace: "pre-wrap",
-                lineHeight: 1.55,
-                color: "#0f172a",
-                maxHeight: "50vh",
-                overflow: "auto",
-                paddingRight: 8,
-              }}
-            >
-              {text || "No explanation returned. Try again."}
+          )}
+
+          {/* After parse: structured cards */}
+          {showCards && sections && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Card title="Simple explanation">
+                {sections.simpleExplanation || "—"}
+              </Card>
+
+              <Card title="Real-world example">
+                {sections.realWorldExample || "—"}
+              </Card>
+
+              <Card title="Key commands">
+                {sections.keyCommands?.length ? (
+                  <ul className="list-disc pl-5 space-y-1">
+                    {sections.keyCommands.map((x, i) => <li key={i}>{x}</li>)}
+                  </ul>
+                ) : (
+                  "—"
+                )}
+              </Card>
+
+              <Card title="Common mistakes">
+                {sections.commonMistakes?.length ? (
+                  <ul className="list-disc pl-5 space-y-1">
+                    {sections.commonMistakes.map((x, i) => <li key={i}>{x}</li>)}
+                  </ul>
+                ) : (
+                  "—"
+                )}
+              </Card>
+
+              <div className="md:col-span-2">
+                <Card title="Quick check">
+                  {sections.quickCheck?.length ? (
+                    <ul className="list-disc pl-5 space-y-1">
+                      {sections.quickCheck.map((x, i) => <li key={i}>{x}</li>)}
+                    </ul>
+                  ) : (
+                    "—"
+                  )}
+                </Card>
+              </div>
             </div>
+          )}
+
+          {!loading && !fullText && (
+            <div className="text-slate-500 text-sm">No explanation available.</div>
           )}
         </div>
 
-        {/* Footer */}
-        <div
-          style={{
-            padding: "16px 20px",
-            borderTop: "1px solid rgba(226,232,240,1)",
-            display: "flex",
-            justifyContent: "flex-end",
-          }}
-        >
+        <div className="p-5 border-t border-slate-100 flex justify-end">
           <button
             onClick={onClose}
-            style={{
-              background: "#0f172a",
-              color: "white",
-              border: "none",
-              padding: "12px 18px",
-              borderRadius: 14,
-              fontWeight: 800,
-              cursor: "pointer",
-            }}
+            className="px-6 py-3 rounded-2xl bg-slate-900 text-white font-black shadow-lg hover:bg-slate-800 transition"
           >
             Got it, thanks!
           </button>

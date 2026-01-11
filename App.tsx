@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { CCNA_DOMAINS, CCNA_Category, Deck, Card, User } from './types';
 import FlashcardComponent from './components/FlashcardComponent';
 import StudyAssistant from './components/StudyAssistant';
-import { explainConcept } from './services/gemini';
+import { explainConceptStream, parseTutorSectionsFromText } from './services/gemini';
 import { loadDecks, loadCards } from './services/csvParser';
 import { startStripeCheckout } from './services/stripe';
 
@@ -310,19 +310,40 @@ const App: React.FC = () => {
     }
   };
 
-  const handleExplain = async (concept: string) => {
-    setCurrentConcept(concept);
-    setAiLoading(true);
-    setAiExplanation(null);
-    try {
-      const explanation = await explainConcept(concept, currentCard?.answer || "");
-      setAiExplanation(explanation || "No explanation available.");
-    } catch (error) {
-      setAiExplanation("Error connecting to AI tutor.");
-    } finally {
+const handleExplain = async (concept: string) => {
+  // 1) Open the AI Tutor instantly
+  setCurrentConcept(concept);
+  setAiLoading(true);
+  setAiExplanation(""); // clear old output
+
+  const answerContext = currentCard?.answer || "";
+
+  let liveText = "";
+
+  await explainConceptStream({
+    concept,
+    answerContext,
+
+    // 2) Streaming updates -> feels instant
+    onToken: (delta) => {
+      liveText += delta;
+      setAiExplanation(liveText);
+    },
+
+    // 3) When done -> normalize into strict JSON for clean card rendering
+    onDone: (finalText) => {
+      const parsed = parseTutorSectionsFromText(finalText);
+      setAiExplanation(JSON.stringify(parsed));
       setAiLoading(false);
-    }
-  };
+    },
+
+    onError: (msg) => {
+      setAiExplanation(msg);
+      setAiLoading(false);
+    },
+  });
+};
+
 
   if (isDataLoading) {
     return (
