@@ -2,12 +2,15 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta";
-const DEFAULT_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
-// Simple in-memory cache (per serverless instance)
-type CacheVal = { expiresAt: number; value: any };
-const CACHE = new Map<string, CacheVal>();
-const CACHE_TTL_MS = 1000 * 60 * 10; // 10 minutes
+type TutorJSON = {
+  title: string;
+  simpleExplanation: string;
+  realWorldExample: string;
+  keyCommands: string[];
+  commonMistakes: string[];
+  quickCheck: string[];
+};
 
 function getKey() {
   const key = process.env.GEMINI_API_KEY;
@@ -15,93 +18,131 @@ function getKey() {
   return key;
 }
 
-function cacheGet(key: string) {
-  const hit = CACHE.get(key);
-  if (!hit) return null;
-  if (Date.now() > hit.expiresAt) {
-    CACHE.delete(key);
-    return null;
-  }
-  return hit.value;
-}
-function cacheSet(key: string, value: any) {
-  CACHE.set(key, { value, expiresAt: Date.now() + CACHE_TTL_MS });
+function safeJsonExtract(s: string): string | null {
+  if (!s) return null;
+  const first = s.indexOf("{");
+  const last = s.lastIndexOf("}");
+  if (first === -1 || last === -1 || last <= first) return null;
+  return s.slice(first, last + 1);
 }
 
-// Try to extract text from Gemini REST response safely
-function extractText(data: any): string {
+function tryParseTutorJSON(raw: string): TutorJSON | null {
+  // 1) direct JSON
+  try {
+    const obj = JSON.parse(raw);
+    return obj as TutorJSON;
+  } catch {}
+
+  // 2) extract { ... } region
+  const extracted = safeJsonExtract(raw);
+  if (!extracted) return null;
+
+  try {
+    const obj = JSON.parse(extracted);
+    return obj as TutorJSON;
+  } catch {}
+
+  return null;
+}
+
+function normalizeTutorJSON(obj: Partial<TutorJSON>): TutorJSON {
+  return {
+    title: String(obj.title ?? "").trim() || "AI Tutor",
+    simpleExplanation: String(obj.simpleExplanation ?? "").trim(),
+    realWorldExample: String(obj.realWorldExample ?? "").trim(),
+    keyCommands: Array.isArray(obj.keyCommands) ? obj.keyCommands.map(String).filter(Boolean) : [],
+    commonMistakes: Array.isArray(obj.commonMistakes) ? obj.commonMistakes.map(String).filter(Boolean) : [],
+    quickCheck: Array.isArray(obj.quickCheck) ? obj.quickCheck.map(String).filter(Boolean) : [],
+  };
+}
+
+function needsRepair(obj: TutorJSON) {
+  // if key sections are missing/empty, trigger a one-time repair call
+  return (
+    !obj.simpleExplanation ||
+    !obj.realWorldExample ||
+    obj.keyCommands.length === 0 ||
+    obj.commonMistakes.length === 0
+  );
+}
+
+async function generateContent(key: string, model: string, prompt: string) {
+  const url = `${API_BASE}/models/${encodeURIComponent(model)}:generateContent`;
+
+  const r = await fetch(url, {
+    method: "POST",
+    headers: {
+      "x-goog-api-key": key,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        // near-zero cutoffs + still fast
+        maxOutputTokens: 1100,
+        temperature: 0.6,
+
+        // IMPORTANT: force JSON output
+        responseMimeType: "application/json",
+      },
+    }),
+  });
+
+  const data = await r.json();
+  return { status: r.status, data };
+}
+
+function getTextFromGeminiResponse(data: any): string {
   const parts = data?.candidates?.[0]?.content?.parts;
   if (!Array.isArray(parts)) return "";
   return parts.map((p: any) => p?.text).filter(Boolean).join("");
 }
 
-async function generateContentRaw(opts: {
-  apiKey: string;
-  model: string;
-  prompt: string;
-  maxOutputTokens: number;
-  temperature: number;
-}) {
-  const url = `${API_BASE}/models/${encodeURIComponent(opts.model)}:generateContent`;
-
-  const r = await fetch(url, {
-    method: "POST",
-    headers: {
-      "x-goog-api-key": opts.apiKey,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: opts.prompt }] }],
-      generationConfig: {
-        maxOutputTokens: opts.maxOutputTokens,
-        temperature: opts.temperature,
-      },
-    }),
-  });
-
-  const data = await r.json().catch(() => ({}));
-  return { status: r.status, data };
-}
-
-function buildStructuredPrompt(userPrompt: string) {
-  // Force JSON ONLY. No markdown. No headings with #.
+function buildJsonPrompt(conceptPrompt: string) {
   return `
-You are a CCNA tutor. Return ONLY valid JSON that matches this exact schema (no extra keys):
+You are a CCNA tutor. Return ONLY valid JSON (no markdown, no code fences, no extra text).
+
+JSON SCHEMA:
 {
-  "title": "string",
-  "simpleExplanation": "string",
-  "realWorldExample": "string",
-  "keyCommands": ["string"],
-  "commonMistakes": ["string"],
-  "quickCheck": ["string"]
+  "title": string,
+  "simpleExplanation": string,
+  "realWorldExample": string,
+  "keyCommands": string[],
+  "commonMistakes": string[],
+  "quickCheck": string[]
 }
 
-Rules:
-- No markdown, no backticks, no extra commentary.
-- Keep each string concise but complete.
-- If no commands apply, return an empty array for keyCommands.
-- Provide at least 2 items in commonMistakes and quickCheck when possible.
+RULES:
+- Do NOT include hashtags.
+- Every field must be present.
+- keyCommands/commonMistakes/quickCheck must be arrays (can be empty, but try to include at least 2 items each when relevant).
+- Keep it concise, practical, and human-sounding.
 
 USER REQUEST:
-${userPrompt}
+${conceptPrompt}
 `.trim();
 }
 
-function safeJsonParseMaybe(text: string) {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
+function buildRepairPrompt(originalRequest: string, badOutput: string) {
+  return `
+You returned output that was missing fields or not valid JSON.
+
+Fix it and return ONLY valid JSON that matches the schema exactly.
+
+ORIGINAL REQUEST:
+${originalRequest}
+
+BAD OUTPUT:
+${badOutput}
+`.trim();
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
-    const apiKey = getKey();
+    const key = getKey();
 
-    // Healthcheck
     if (req.method === "GET") {
-      return res.status(200).json({ ok: true, hint: "POST { prompt }" });
+      return res.status(200).json({ ok: true, hint: "Send POST with { prompt }" });
     }
 
     if (req.method !== "POST") {
@@ -114,88 +155,59 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: "Missing 'prompt' in JSON body" });
     }
 
-    const chosenModel = (typeof model === "string" && model.trim()) ? model.trim() : DEFAULT_MODEL;
+    const chosenModel =
+      (typeof model === "string" && model.trim()) ||
+      process.env.GEMINI_MODEL ||
+      "gemini-2.5-flash";
 
-    // Cache key should include model + prompt
-    const cacheKey = `${chosenModel}::${prompt}`;
-    const cached = cacheGet(cacheKey);
-    if (cached) {
-      return res.status(200).json({ cached: true, model: chosenModel, result: cached });
-    }
+    // 1) Primary call (forced JSON)
+    const jsonPrompt = buildJsonPrompt(prompt);
+    const out1 = await generateContent(key, chosenModel, jsonPrompt);
 
-    const structuredPrompt = buildStructuredPrompt(prompt);
-
-    // First attempt
-    const first = await generateContentRaw({
-      apiKey,
-      model: chosenModel,
-      prompt: structuredPrompt,
-      maxOutputTokens: 1200,
-      temperature: 0.6,
-    });
-
-    if (!String(first.status).startsWith("2")) {
+    if (!String(out1.status).startsWith("2")) {
       return res.status(500).json({
         error: "Gemini request failed",
-        status: first.status,
-        details: first.data,
+        status: out1.status,
+        details: out1.data,
         model: chosenModel,
       });
     }
 
-    let text = extractText(first.data);
-    let json = safeJsonParseMaybe(text);
+    const raw1 = getTextFromGeminiResponse(out1.data);
+    let parsed = tryParseTutorJSON(raw1);
+    let normalized = parsed ? normalizeTutorJSON(parsed) : null;
 
-    // If it got cut off OR JSON parse failed, do ONE continuation call
-    const finishReason = first.data?.candidates?.[0]?.finishReason;
-    if ((!json || finishReason === "MAX_TOKENS") && text) {
-      const continuePrompt = `
-The previous JSON was incomplete or cut off.
-Continue by returning ONLY the remaining JSON text so that the final result becomes a valid JSON object matching the schema.
-Do NOT restart. Do NOT add markdown. Continue exactly where it cut off.
+    // 2) One-time repair if missing sections / parse failed
+    if (!normalized || needsRepair(normalized)) {
+      const repairPrompt = buildRepairPrompt(prompt, raw1);
+      const out2 = await generateContent(key, chosenModel, repairPrompt);
 
-PARTIAL OUTPUT SO FAR:
-${text}
-`.trim();
-
-      const second = await generateContentRaw({
-        apiKey,
-        model: chosenModel,
-        prompt: continuePrompt,
-        maxOutputTokens: 900,
-        temperature: 0.3,
-      });
-
-      if (String(second.status).startsWith("2")) {
-        const t2 = extractText(second.data);
-        const merged = (text + t2).trim();
-        const j2 = safeJsonParseMaybe(merged);
-        if (j2) {
-          text = merged;
-          json = j2;
-        }
+      if (String(out2.status).startsWith("2")) {
+        const raw2 = getTextFromGeminiResponse(out2.data);
+        const parsed2 = tryParseTutorJSON(raw2);
+        if (parsed2) normalized = normalizeTutorJSON(parsed2);
       }
     }
 
-    // Final fallback if still not JSON: wrap as simpleExplanation
-    if (!json) {
-      json = {
-        title: "AI Tutor",
-        simpleExplanation: text || "No explanation returned.",
-        realWorldExample: "",
-        keyCommands: [],
-        commonMistakes: [],
-        quickCheck: [],
-      };
+    // 3) Final response: ALWAYS return structured object
+    if (!normalized) {
+      return res.status(200).json({
+        ok: true,
+        model: chosenModel,
+        data: normalizeTutorJSON({
+          title: "AI Tutor",
+          simpleExplanation: raw1 || "No explanation available.",
+          realWorldExample: "",
+          keyCommands: [],
+          commonMistakes: [],
+          quickCheck: [],
+        }),
+        // keep raw only for debugging
+        raw: raw1,
+      });
     }
 
-    cacheSet(cacheKey, json);
-
-    return res.status(200).json({
-      cached: false,
-      model: chosenModel,
-      result: json,
-    });
+    return res.status(200).json({ ok: true, model: chosenModel, data: normalized });
   } catch (e: any) {
     return res.status(500).json({ error: e?.message || "Server error" });
   }

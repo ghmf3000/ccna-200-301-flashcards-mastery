@@ -131,18 +131,30 @@ function normalizeResult(input: AiTutorResult | null): AiTutorResult | null {
 
     const parsed = tryParseJson(jsonBlock);
     if (parsed && typeof parsed === "object") {
-      // Merge parsed object into current result, parsed wins
-      const merged: any = { ...(input as any), ...parsed };
+  // If core fields are missing, ignore this JSON blob
+  const hasEnoughData =
+  typeof parsed.simpleExplanation === "string" &&
+  parsed.simpleExplanation.length > 40 &&
+  (
+    typeof parsed.realWorldExample === "string" ||
+    Array.isArray(parsed.keyCommands) ||
+    Array.isArray(parsed.commonMistakes)
+  );
 
-      // Normalize fields so UI never breaks
-      merged.title = cleanText(merged.title) || "AI Tutor";
-      merged.simpleExplanation = cleanText(merged.simpleExplanation);
-      merged.realWorldExample = cleanText(merged.realWorldExample);
-      merged.keyCommands = toStringArray(merged.keyCommands);
-      merged.commonMistakes = toStringArray(merged.commonMistakes);
-      merged.quickCheck = toStringArray(merged.quickCheck);
+   if (!hasEnoughData) continue;
 
-      return merged as AiTutorResult;
+  const merged: any = { ...(input as any), ...parsed };
+
+// normalize fields
+merged.title = cleanText(merged.title) || "AI Tutor";
+merged.simpleExplanation = cleanText(merged.simpleExplanation);
+merged.realWorldExample = cleanText(merged.realWorldExample);
+merged.keyCommands = normalizeList(merged.keyCommands);
+merged.commonMistakes = normalizeList(merged.commonMistakes);
+merged.quickCheck = normalizeList(merged.quickCheck);
+
+// ✅ stop once we have a valid fixed object
+return merged as AiTutorResult;
     }
   }
 
