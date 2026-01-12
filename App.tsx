@@ -294,33 +294,97 @@ export default function App() {
     <div className="min-h-screen bg-slate-50 flex flex-col select-none">
       {/* SIGNED OUT (LOGIN) */}
       <SignedOut>
-        {view === "login" && (
-          <div className="min-h-screen grid grid-cols-1 lg:grid-cols-2">
-            <div className="hidden lg:flex flex-col justify-center px-16 bg-gradient-to-br from-[#002f45] via-[#005073] to-[#0a2540] text-white">
-              <div className="max-w-md space-y-6">
-                <h1 className="text-4xl font-black leading-tight">
-                  CCNA Mastery <br /> 200-301 Prep
-                </h1>
-                <p className="text-white/80 text-lg">
-                  Flashcards + AI Tutor + Progress tracking — built for serious study.
-                </p>
-                <ul className="space-y-3 text-sm">
-                  <li className="flex items-center gap-2">✅ 500+ exam-aligned flashcards</li>
-                  <li className="flex items-center gap-2">🤖 AI Tutor with clean sections</li>
-                  <li className="flex items-center gap-2">📊 Mastery tracking by domain</li>
-                  <li className="flex items-center gap-2">👑 One-time Pro upgrade</li>
-                </ul>
-              </div>
-            </div>
+  <div className="min-h-screen relative overflow-hidden flex items-center justify-center px-6">
+    {/* Background */}
+    <div className="absolute inset-0 bg-gradient-to-br from-[#001c2b] via-[#005073] to-[#0a2540]" />
 
-            <div className="flex items-center justify-center bg-slate-50 px-6">
-              <div className="w-full max-w-md">
-                <SignIn />
+    {/* Soft glow blobs */}
+    <div className="absolute -top-24 -left-24 w-[420px] h-[420px] bg-cyan-400/20 blur-3xl rounded-full" />
+    <div className="absolute -bottom-32 -right-24 w-[520px] h-[520px] bg-indigo-400/20 blur-3xl rounded-full" />
+
+    {/* Subtle grid pattern */}
+    <svg
+      className="absolute inset-0 opacity-[0.08]"
+      width="100%"
+      height="100%"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <defs>
+        <pattern id="grid" width="42" height="42" patternUnits="userSpaceOnUse">
+          <path d="M 42 0 L 0 0 0 42" fill="none" stroke="white" strokeWidth="1" />
+        </pattern>
+      </defs>
+      <rect width="100%" height="100%" fill="url(#grid)" />
+    </svg>
+
+    {/* Foreground content */}
+    <div className="relative w-full max-w-5xl grid grid-cols-1 lg:grid-cols-2 gap-10 items-center">
+      {/* Left marketing panel */}
+      <div className="hidden lg:block text-white">
+        <div className="max-w-md space-y-6">
+          <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-xs font-black uppercase tracking-widest">
+            <span className="text-lg">📚</span> CCNA 200-301 Prep
+          </div>
+
+          <h1 className="text-4xl font-black leading-tight">
+            CCNA Mastery
+            <br />
+            Flashcards + AI Tutor
+          </h1>
+
+          <p className="text-white/80 text-lg leading-relaxed">
+            Study smarter with domain-based decks, mastery tracking, and an AI tutor that explains concepts with real CLI examples.
+          </p>
+
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div className="rounded-2xl bg-white/10 p-4">
+              <div className="text-xs font-black uppercase tracking-widest text-white/70">Cards</div>
+              <div className="text-2xl font-black">500+</div>
+            </div>
+            <div className="rounded-2xl bg-white/10 p-4">
+              <div className="text-xs font-black uppercase tracking-widest text-white/70">Domains</div>
+              <div className="text-2xl font-black">6</div>
+            </div>
+            <div className="rounded-2xl bg-white/10 p-4 col-span-2">
+              <div className="text-xs font-black uppercase tracking-widest text-white/70">Includes</div>
+              <div className="font-bold text-white/90 mt-1">
+                ✅ AI Explain • ✅ TTS • ✅ Progress • ✅ Pro Upgrade
               </div>
             </div>
           </div>
-        )}
-      </SignedOut>
+
+          <p className="text-xs text-white/60">
+            Tip: Use Google sign-in for fastest access.
+          </p>
+        </div>
+      </div>
+
+      {/* Right sign-in card (centered) */}
+      <div className="flex items-center justify-center">
+        <div className="w-full max-w-md">
+          <div className="rounded-3xl bg-white/10 border border-white/20 p-6 backdrop-blur-xl shadow-2xl">
+            <div className="mb-4">
+              <div className="text-white text-xl font-black">Welcome back</div>
+              <div className="text-white/70 text-sm">
+                Sign in to continue your CCNA study journey.
+              </div>
+            </div>
+
+            {/* Clerk widget */}
+            <div className="flex justify-center">
+              <SignIn />
+            </div>
+          </div>
+
+          {/* Small footer */}
+          <div className="mt-4 text-center text-xs text-white/60">
+            By signing in, you’ll be able to track mastery across devices.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</SignedOut>
 
       {/* SIGNED IN (APP) */}
       <SignedIn>
