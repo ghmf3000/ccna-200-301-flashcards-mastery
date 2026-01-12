@@ -193,20 +193,24 @@ export default function App() {
   };
 
   const handleDeckSelect = (deck: Deck) => {
-    const premium = isPremiumValue(deck.is_premium);
+  const premium = isPremiumValue(deck.is_premium);
+  const isPro = localStorage.getItem("ccna_isPro") === "true";
 
-    if (premium && !appUser?.isPro) {
-      setAttemptedDeckId(deck.deck_id);
-      setAttemptedDeckName(deck.deck_name);
-      setView("paywall");
-      return;
-    }
+  if (premium && !isPro) {
+    setAttemptedDeckId(deck.deck_id);
+    setAttemptedDeckName(deck.deck_name);
+    setView("paywall");
+    return;
+  }
 
-    setSelectedDeckId(deck.deck_id);
-    setSelectedDeckName(deck.deck_name);
-    setCurrentIndex(0);
-    setView("study");
-  };
+  localStorage.setItem("ccna_lastDeckId", deck.deck_id);
+  localStorage.setItem("ccna_lastDeckName", deck.deck_name);
+
+  setSelectedDeckId(deck.deck_id);
+  setSelectedDeckName(deck.deck_name);
+  setCurrentIndex(0);
+  setView("study");
+};
 
   const handleExplain = async (concept: string) => {
     setCurrentConcept(concept);
