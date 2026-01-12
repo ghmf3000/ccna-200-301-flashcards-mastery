@@ -5,7 +5,7 @@ import StudyAssistant from "./components/StudyAssistant";
 import { explainConcept, type AiTutorResult } from "./services/gemini";
 import { loadDecks, loadCards } from "./services/csvParser";
 import { startStripeCheckout } from "./services/stripe";
-import { SignedIn, SignedOut, SignIn, useUser } from "@clerk/clerk-react";
+import { SignedIn, SignedOut, SignIn, UserButton, useUser } from "@clerk/clerk-react";
 
 type AppView = "domainSelect" | "deckSelect" | "study" | "paywall";
 
@@ -18,6 +18,17 @@ const DOMAIN_COLORS: Record<number, string> = {
   5: "#DC2626",
   6: "#CA8A04",
 };
+
+const { isLoaded, isSignedIn, user: clerkUser } = useUser();
+
+useEffect(() => {
+  if (!isLoaded) return;
+  if (isSignedIn) {
+    setView("domainSelect");
+  } else {
+    setView("login");
+  }
+}, [isLoaded, isSignedIn]);
 
 const getDomainColor = (id: number | null): string =>
   DOMAIN_COLORS[id ?? 0] || "#64748b";
@@ -135,97 +146,57 @@ export default function App() {
   return (
     <>
       {/* 🔒 SIGNED OUT */}
-      <SignedOut>
-        <div className="min-h-screen flex items-center justify-center bg-slate-100">
+      {view === "login" && (
+  <SignedOut>
+    <div className="min-h-screen grid grid-cols-1 lg:grid-cols-2">
+      {/* LEFT brand panel */}
+      <div className="hidden lg:flex flex-col justify-center px-16 bg-gradient-to-br from-[#002f45] via-[#005073] to-[#0a2540] text-white">
+        <div className="max-w-md space-y-6">
+          <h1 className="text-4xl font-black leading-tight">
+            CCNA Mastery <br /> 200-301 Prep
+          </h1>
+          <p className="text-white/80 text-lg">
+            Flashcards + AI Tutor + Progress tracking — built for serious study.
+          </p>
+          <ul className="space-y-3 text-sm">
+            <li className="flex items-center gap-2">✅ 500+ exam-aligned flashcards</li>
+            <li className="flex items-center gap-2">🤖 AI Tutor with clean sections</li>
+            <li className="flex items-center gap-2">📊 Mastery tracking by domain</li>
+            <li className="flex items-center gap-2">👑 One-time Pro upgrade</li>
+          </ul>
+        </div>
+      </div>
+
+      {/* RIGHT sign-in */}
+      <div className="flex items-center justify-center bg-slate-50 px-6">
+        <div className="w-full max-w-md">
           <SignIn />
         </div>
-      </SignedOut>
+      </div>
+    </div>
+  </SignedOut>
+)}
 
       {/* ✅ SIGNED IN */}
       <SignedIn>
-        <div className="min-h-screen bg-slate-50">
-          {view === "domainSelect" && (
-            <main className="max-w-6xl mx-auto p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
-              {CCNA_DOMAINS.map(d => (
-                <button
-                  key={d.id}
-                  onClick={() => {
-                    setSelectedDomainId(d.id);
-                    setSelectedDomainName(d.subtitle);
-                    setView("deckSelect");
-                  }}
-                  className="bg-white p-6 rounded-2xl shadow"
-                >
-                  <h3 className="font-black">{d.subtitle}</h3>
-                </button>
-              ))}
-            </main>
-          )}
+  <header className="bg-[#005073] text-white shadow-md sticky top-0 z-40 h-16 flex items-center">
+    <div className="max-w-6xl mx-auto px-4 w-full flex justify-between items-center">
+      <div className="flex items-center gap-3">
+        <h1 className="text-xl font-bold">CCNA Mastery</h1>
+        <span className="bg-amber-400 text-amber-900 text-[10px] font-black px-2 py-0.5 rounded-full uppercase ml-1 shadow-sm">
+          PRO
+        </span>
+      </div>
 
-          {view === "deckSelect" && (
-            <main className="max-w-2xl mx-auto p-6 space-y-4">
-              {domainDecksList.map(deck => (
-                <button
-                  key={deck.deck_id}
-                  onClick={() => {
-                    if (isPremiumValue(deck.is_premium) && !user?.isPro) {
-                      setAttemptedDeckId(deck.deck_id);
-                      setAttemptedDeckName(deck.deck_name);
-                      setView("paywall");
-                    } else {
-                      setSelectedDeckId(deck.deck_id);
-                      setSelectedDeckName(deck.deck_name);
-                      setView("study");
-                    }
-                  }}
-                  className="w-full bg-white p-4 rounded-xl border"
-                >
-                  {deck.deck_name}
-                </button>
-              ))}
-            </main>
-          )}
-
-          {view === "study" && currentCard && (
-            <main className="flex flex-col items-center p-6">
-              <FlashcardComponent
-                card={currentCard}
-                isMastered={false}
-                onMastered={() => {}}
-                onExplain={handleExplain}
-                onSpeak={handleSpeak}
-                isSpeaking={isSpeaking}
-                domainColor={getDomainColor(selectedDomainId)}
-              />
-            </main>
-          )}
-
-          {view === "paywall" && (
-            <main className="flex items-center justify-center p-6">
-              <button
-                onClick={() =>
-                  startStripeCheckout(attemptedDeckId, attemptedDeckName)
-                }
-                className="bg-amber-500 text-white px-8 py-4 rounded-xl font-black"
-              >
-                Unlock Pro ($39)
-              </button>
-            </main>
-          )}
-
-          {(aiExplanation || aiLoading) && (
-            <StudyAssistant
-              concept={currentConcept}
-              result={aiExplanation}
-              loading={aiLoading}
-              onClose={() => {
-                setAiExplanation(null);
-                setAiLoading(false);
-              }}
-            />
-          )}
-        </div>
-      </SignedIn>
+      <div className="flex items-center gap-3">
+        <span className="text-xs text-white/70 hidden sm:block">
+          {clerkUser?.primaryEmailAddress?.emailAddress}
+        </span>
+        <UserButton afterSignOutUrl="/" />
+      </div>
+    </div>
+  </header>
+</SignedIn>
     </>
   );
 }
