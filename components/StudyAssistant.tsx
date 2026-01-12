@@ -208,30 +208,28 @@ function normalizeResult(input: AiTutorResult | null): AiTutorResult | null {
 
     const parsed = tryParseJson(jsonBlock);
     if (parsed && typeof parsed === "object") {
-  // If core fields are missing, ignore this JSON blob
-  const hasEnoughData =
-  typeof parsed.simpleExplanation === "string" &&
-  parsed.simpleExplanation.length > 40 &&
-  (
-    typeof parsed.realWorldExample === "string" ||
-    Array.isArray(parsed.keyCommands) ||
-    Array.isArray(parsed.commonMistakes)
-  );
+      // If core fields are missing, ignore this JSON blob
+      const hasEnoughData =
+        typeof parsed.simpleExplanation === "string" &&
+        parsed.simpleExplanation.length > 40 &&
+        (typeof parsed.realWorldExample === "string" ||
+          Array.isArray(parsed.keyCommands) ||
+          Array.isArray(parsed.commonMistakes) ||
+          Array.isArray(parsed.quickCheck));
 
-   if (!hasEnoughData) continue;
+      if (!hasEnoughData) continue;
 
-  const merged: any = { ...(input as any), ...parsed };
+      const merged: any = { ...(input as any), ...parsed };
 
-// normalize fields
-merged.title = cleanText(merged.title) || "AI Tutor";
-merged.simpleExplanation = cleanText(merged.simpleExplanation);
-merged.realWorldExample = cleanText(merged.realWorldExample);
-merged.keyCommands = normalizeList(merged.keyCommands);
-merged.commonMistakes = normalizeList(merged.commonMistakes);
-merged.quickCheck = normalizeList(merged.quickCheck);
+      // normalize fields so UI never breaks
+      merged.title = cleanText(merged.title) || "AI Tutor";
+      merged.simpleExplanation = cleanText(merged.simpleExplanation);
+      merged.realWorldExample = cleanText(merged.realWorldExample);
+      merged.keyCommands = toStringArray(merged.keyCommands);
+      merged.commonMistakes = toStringArray(merged.commonMistakes);
+      merged.quickCheck = toStringArray(merged.quickCheck);
 
-// ✅ stop once we have a valid fixed object
-return merged as AiTutorResult;
+      return merged as AiTutorResult;
     }
   }
 
@@ -293,6 +291,7 @@ export default function StudyAssistant({ concept, result, loading, onClose }: Pr
 
       {/* Modal */}
       <div className="relative w-full max-w-3xl bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
+       <style>{styles}</style>
         <div className="p-5 flex items-start justify-between border-b border-slate-200">
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 rounded-2xl bg-blue-50 flex items-center justify-center">⚡</div>
@@ -327,28 +326,28 @@ export default function StudyAssistant({ concept, result, loading, onClose }: Pr
               )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Section title="Simple explanation" tone="default">
+               <Section title="Simple explanation" tone="default" defaultOpen index={0}>
+                 <p className="text-sm text-slate-800 whitespace-pre-wrap">
+                    {normalized.simpleExplanation || "—"}
+                 </p>
+               </Section>
+
+                <Section title="Real-world example" tone="example" defaultOpen index={1}>
                   <p className="text-sm text-slate-800 whitespace-pre-wrap">
-                    {missing(normalized.simpleExplanation) ? "—" : normalized.simpleExplanation}
+                    {normalized.realWorldExample || "—"}
                   </p>
                 </Section>
 
-                <Section title="Real-world example" tone="example">
-                  <p className="text-sm text-slate-800 whitespace-pre-wrap">
-                    {missing(normalized.realWorldExample) ? "—" : normalized.realWorldExample}
-                  </p>
-                </Section>
-
-                <Section title="Key commands" tone="commands">
+                <Section title="Key commands" tone="commands" index={2}>
                   <Bullets items={normalized.keyCommands || []} />
                 </Section>
 
-                <Section title="Common mistakes" tone="mistakes">
+                <Section title="Common mistakes" tone="mistakes" index={3}>
                   <Bullets items={normalized.commonMistakes || []} />
                 </Section>
 
                 <div className="md:col-span-2">
-                  <Section title="Quick check" tone="check">
+                  <Section title="Quick check" tone="check" index={4}>
                     <Bullets items={normalized.quickCheck || []} />
                   </Section>
                 </div>
