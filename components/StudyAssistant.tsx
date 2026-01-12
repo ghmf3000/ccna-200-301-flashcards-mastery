@@ -81,7 +81,6 @@ const Section: React.FC<{
     </div>
   );
 
-  // Non-collapsible
   if (!collapsible) {
     return (
       <div className="border border-slate-200 rounded-2xl p-4 bg-white shadow-sm">
@@ -91,34 +90,13 @@ const Section: React.FC<{
     );
   }
 
-  // Collapsible (chevron rotation handled by Tailwind group-open)
   return (
-    <details
-      className="group border border-slate-200 rounded-2xl bg-white shadow-sm"
-      open={defaultOpen}
-    >
+    <details className="group border border-slate-200 rounded-2xl bg-white shadow-sm" open={defaultOpen}>
       <summary className="cursor-pointer select-none list-none p-4 flex items-center justify-between">
         {Header}
         <span className="text-slate-400 font-black text-lg leading-none transition-transform group-open:rotate-90">
           ›
         </span>
-      </summary>
-
-      <div className="px-4 pb-4 -mt-1">{children}</div>
-    </details>
-);
-}
-
-  // Collapsible card
-  return (
-    <details
-      className="border border-slate-200 rounded-2xl bg-white shadow-sm animate-in"
-      style={{ animationDelay: `${delay}ms` }}
-      open={defaultOpen}
-    >
-      <summary className="cursor-pointer select-none list-none p-4 flex items-center justify-between">
-        {Header}
-        <span className="text-slate-400 font-black text-lg leading-none">›</span>
       </summary>
 
       <div className="px-4 pb-4 -mt-1">{children}</div>
@@ -218,12 +196,13 @@ function normalizeResult(input: AiTutorResult | null): AiTutorResult | null {
 
     const parsed = tryParseJson(jsonBlock);
     if (parsed && typeof parsed === "object") {
-      // Use parsed JSON EVEN IF it's short (prevents raw blob leaking into UI)
       const out: any = {};
 
       out.title = cleanText(parsed.title) || safeTextFallback((input as any)?.title) || "AI Tutor";
-      out.simpleExplanation = cleanText(parsed.simpleExplanation) || safeTextFallback((input as any)?.simpleExplanation);
-      out.realWorldExample = cleanText(parsed.realWorldExample) || safeTextFallback((input as any)?.realWorldExample);
+      out.simpleExplanation =
+        cleanText(parsed.simpleExplanation) || safeTextFallback((input as any)?.simpleExplanation);
+      out.realWorldExample =
+        cleanText(parsed.realWorldExample) || safeTextFallback((input as any)?.realWorldExample);
 
       out.keyCommands = toStringArray(parsed.keyCommands);
       out.commonMistakes = toStringArray(parsed.commonMistakes);
@@ -233,7 +212,6 @@ function normalizeResult(input: AiTutorResult | null): AiTutorResult | null {
     }
   }
 
-  // Normal path: clean/normalize without JSON
   const out: any = {};
   out.title = safeTextFallback((input as any)?.title) || "AI Tutor";
   out.simpleExplanation = safeTextFallback((input as any)?.simpleExplanation);
