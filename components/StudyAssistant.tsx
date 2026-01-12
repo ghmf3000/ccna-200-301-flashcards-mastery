@@ -107,7 +107,6 @@ const Section: React.FC<{
       <div className="px-4 pb-4 -mt-1">{children}</div>
     </details>
   );
-};
 }
 
   // Collapsible card
