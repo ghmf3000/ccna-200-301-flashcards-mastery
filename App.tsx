@@ -6,15 +6,6 @@ import { explainConcept, type AiTutorResult } from "./services/gemini";
 import { loadDecks, loadCards } from "./services/csvParser";
 import { startStripeCheckout } from "./services/stripe";
 
-import {
-  ClerkProvider,
-  SignedIn,
-  SignedOut,
-  SignIn,
-  useUser,
-  useClerk,
-} from "@clerk/clerk-react";
-
 type AppView = "login" | "domainSelect" | "deckSelect" | "study" | "paywall";
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string;
@@ -784,10 +775,7 @@ const AppInner: React.FC = () => {
 // -----------------------------
 const App: React.FC = () => {
   return (
-    <ClerkProvider publishableKey={clerkPubKey}>
-      <AppInner />
-    </ClerkProvider>
-  );
+   
 };
 
 export default App;
