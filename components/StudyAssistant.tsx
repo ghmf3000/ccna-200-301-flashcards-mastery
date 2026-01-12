@@ -35,9 +35,12 @@ function useTypewriter(text: string, enabled: boolean, speedMs = 12) {
 }
 
 const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
-  <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50">
-    <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-2">
-      {title}
+  <div className="border border-slate-200 rounded-2xl p-4 bg-white shadow-sm">
+    <div className="flex items-center gap-2 mb-3">
+      <div className="w-1.5 h-5 rounded-full bg-gradient-to-b from-blue-500 to-indigo-500" />
+      <div className="text-xs font-extrabold uppercase tracking-widest text-slate-700">
+        {title}
+      </div>
     </div>
     {children}
   </div>
