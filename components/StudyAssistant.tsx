@@ -34,10 +34,31 @@ function useTypewriter(text: string, enabled: boolean, speedMs = 12) {
   return out;
 }
 
-const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
+type SectionTone =
+  | "default"
+  | "commands"
+  | "mistakes"
+  | "check"
+  | "example";
+
+const toneStyles: Record<SectionTone, string> = {
+  default: "from-blue-500 to-indigo-500",
+  commands: "from-green-500 to-emerald-500",
+  mistakes: "from-red-500 to-rose-500",
+  check: "from-purple-500 to-fuchsia-500",
+  example: "from-orange-500 to-amber-500",
+};
+
+const Section: React.FC<{
+  title: string;
+  tone?: SectionTone;
+  children: React.ReactNode;
+}> = ({ title, tone = "default", children }) => (
   <div className="border border-slate-200 rounded-2xl p-4 bg-white shadow-sm">
     <div className="flex items-center gap-2 mb-3">
-      <div className="w-1.5 h-5 rounded-full bg-gradient-to-b from-blue-500 to-indigo-500" />
+      <div
+        className={`w-1.5 h-5 rounded-full bg-gradient-to-b ${toneStyles[tone]}`}
+      />
       <div className="text-xs font-extrabold uppercase tracking-widest text-slate-700">
         {title}
       </div>
@@ -234,28 +255,28 @@ export default function StudyAssistant({ concept, result, loading, onClose }: Pr
               )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Section title="Simple explanation">
+                <Section title="Simple explanation" tone="default">
                   <p className="text-sm text-slate-800 whitespace-pre-wrap">
                     {missing(normalized.simpleExplanation) ? "—" : normalized.simpleExplanation}
                   </p>
                 </Section>
 
-                <Section title="Real-world example">
+                <Section title="Real-world example" tone="example">
                   <p className="text-sm text-slate-800 whitespace-pre-wrap">
                     {missing(normalized.realWorldExample) ? "—" : normalized.realWorldExample}
                   </p>
                 </Section>
 
-                <Section title="Key commands">
+                <Section title="Key commands" tone="commands">
                   <Bullets items={normalized.keyCommands || []} />
                 </Section>
 
-                <Section title="Common mistakes">
+                <Section title="Common mistakes" tone="mistakes">
                   <Bullets items={normalized.commonMistakes || []} />
                 </Section>
 
                 <div className="md:col-span-2">
-                  <Section title="Quick check">
+                  <Section title="Quick check" tone="check">
                     <Bullets items={normalized.quickCheck || []} />
                   </Section>
                 </div>
