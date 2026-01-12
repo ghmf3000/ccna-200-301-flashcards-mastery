@@ -136,10 +136,59 @@ export default function App() {
     <>
       {/* 🔒 SIGNED OUT */}
       <SignedOut>
-        <div className="min-h-screen flex items-center justify-center bg-slate-100">
-          <SignIn />
+  <div className="min-h-screen grid grid-cols-1 lg:grid-cols-2">
+    
+    {/* LEFT: Marketing / Brand */}
+    <div className="hidden lg:flex flex-col justify-center px-16 bg-gradient-to-br from-[#002f45] via-[#005073] to-[#0a2540] text-white">
+      <div className="max-w-md space-y-6">
+        <h1 className="text-4xl font-black leading-tight">
+          Master the CCNA <br /> 200-301 Exam
+        </h1>
+
+        <p className="text-white/80 text-lg">
+          A focused study system for future network engineers.
+        </p>
+
+        <ul className="space-y-3 text-sm">
+          <li className="flex items-center gap-2">✅ 500+ exam-aligned flashcards</li>
+          <li className="flex items-center gap-2">🤖 AI Tutor with real-world explanations</li>
+          <li className="flex items-center gap-2">📊 Progress & mastery tracking</li>
+          <li className="flex items-center gap-2">🔐 Lifetime Pro access</li>
+        </ul>
+
+        <div className="pt-6 text-xs uppercase tracking-widest text-white/60">
+          Built for CCNA • Network Fundamentals • IP • Security
         </div>
-      </SignedOut>
+      </div>
+    </div>
+
+    {/* RIGHT: Clerk Auth */}
+    <div className="flex items-center justify-center bg-slate-50 px-6">
+      <div className="w-full max-w-md">
+        <SignIn
+          appearance={{
+            elements: {
+              card: "shadow-2xl rounded-3xl",
+              headerTitle: "text-xl font-black",
+              headerSubtitle: "text-slate-500",
+              socialButtonsBlockButton:
+                "border border-slate-200 hover:bg-slate-100",
+              formButtonPrimary:
+                "bg-[#005073] hover:bg-[#003f5a] font-bold",
+            },
+            variables: {
+              colorPrimary: "#005073",
+              borderRadius: "1.25rem",
+              fontFamily: "Inter, system-ui, sans-serif",
+            },
+          }}
+        />
+      </div>
+    </div>
+
+  </div>
+</SignedOut>
+
 
       {/* ✅ SIGNED IN */}
       <SignedIn>
