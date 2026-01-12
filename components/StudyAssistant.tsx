@@ -49,23 +49,76 @@ const toneStyles: Record<SectionTone, string> = {
   example: "from-orange-500 to-amber-500",
 };
 
+const toneIcon: Record<SectionTone, string> = {
+  default: "💡",
+  example: "🌍",
+  commands: "⌨️",
+  mistakes: "⚠️",
+  check: "✅",
+};
+
 const Section: React.FC<{
   title: string;
   tone?: SectionTone;
   children: React.ReactNode;
-}> = ({ title, tone = "default", children }) => (
-  <div className="border border-slate-200 rounded-2xl p-4 bg-white shadow-sm">
-    <div className="flex items-center gap-2 mb-3">
+
+  /** Collapsible behavior */
+  collapsible?: boolean;
+  defaultOpen?: boolean;
+
+  /** Animation */
+  index?: number;
+}> = ({
+  title,
+  tone = "default",
+  children,
+  collapsible = true,
+  defaultOpen = false,
+  index = 0,
+}) => {
+  const delay = Math.min(index * 60, 240); // stagger up to ~0.24s max
+
+  const Header = (
+    <div className="flex items-center gap-2">
       <div
         className={`w-1.5 h-5 rounded-full bg-gradient-to-b ${toneStyles[tone]}`}
       />
-      <div className="text-xs font-extrabold uppercase tracking-widest text-slate-700">
+      <span className="text-base leading-none">{toneIcon[tone]}</span>
+      <span className="text-xs font-extrabold uppercase tracking-widest text-slate-700">
         {title}
-      </div>
+      </span>
     </div>
-    {children}
-  </div>
-);
+  );
+
+  // If not collapsible, render like a normal card
+  if (!collapsible) {
+    return (
+      <div
+        className="border border-slate-200 rounded-2xl p-4 bg-white shadow-sm animate-in"
+        style={{ animationDelay: `${delay}ms` }}
+      >
+        <div className="mb-3">{Header}</div>
+        {children}
+      </div>
+    );
+  }
+
+  // Collapsible card
+  return (
+    <details
+      className="border border-slate-200 rounded-2xl bg-white shadow-sm animate-in"
+      style={{ animationDelay: `${delay}ms` }}
+      open={defaultOpen}
+    >
+      <summary className="cursor-pointer select-none list-none p-4 flex items-center justify-between">
+        {Header}
+        <span className="text-slate-400 font-black text-lg leading-none">›</span>
+      </summary>
+
+      <div className="px-4 pb-4 -mt-1">{children}</div>
+    </details>
+  );
+};
 
 const Bullets: React.FC<{ items: string[] }> = ({ items }) => {
   if (!items?.length) return <p className="text-sm text-slate-500">—</p>;
@@ -193,6 +246,25 @@ return merged as AiTutorResult;
   return out as AiTutorResult;
 }
 // ----------------------------------------------------------------------
+const styles = `
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-in {
+  opacity: 0;
+  animation: fadeSlideIn 260ms ease-out forwards;
+}
+
+/* rotate the chevron when open */
+details[open] summary span:last-child {
+  transform: rotate(90deg);
+  transition: transform 150ms ease;
+}
+details summary span:last-child {
+  transition: transform 150ms ease;
+}
+`;
 
 export default function StudyAssistant({ concept, result, loading, onClose }: Props) {
   const normalized = useMemo(() => normalizeResult(result), [result]);
