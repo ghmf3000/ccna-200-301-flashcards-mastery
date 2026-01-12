@@ -262,32 +262,47 @@ export default function App() {
   // -----------------------------
   if (isDataLoading) {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4 text-center">
-          <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-          <p className="text-white font-bold tracking-widest animate-pulse uppercase">
-            Syncing Database...
-          </p>
-        </div>
+      <div className="bg-white/10 border border-white/15 backdrop-blur-xl rounded-3xl p-6 shadow-2xl mb-8">
+  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+    <div>
+      <div className="text-white/70 text-xs font-black uppercase tracking-widest">
+        Learning Dashboard
       </div>
-    );
-  }
+      <h2 className="text-white text-2xl font-black mt-1">
+        Welcome back 👋
+      </h2>
+      <p className="text-white/70 text-sm mt-2">
+        {cards.length} cards • {decks.length} decks • 6 domains
+      </p>
+    </div>
 
-  if (dataError) {
-    return (
-      <div className="min-h-screen bg-red-900 flex items-center justify-center p-6">
-        <div className="bg-white p-8 rounded-3xl max-w-sm w-full text-center">
-          <div className="text-4xl mb-4">⚠️</div>
-          <h2 className="text-xl font-bold text-slate-800 mb-2">Sync Error</h2>
-          <p className="text-slate-500 mb-6">{dataError}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="w-full py-3 bg-slate-800 text-white rounded-xl font-bold"
-          >
-            Retry
-          </button>
-        </div>
-      </div>
+    <div className="flex gap-3">
+      {canResume && (
+        <button
+          onClick={() => {
+            setSelectedDeckId(lastDeckId!);
+            setSelectedDeckName(lastDeckName || "Last Deck");
+            setView("study");
+          }}
+          className="px-5 py-3 rounded-2xl bg-white text-slate-900 font-black shadow-lg hover:opacity-95"
+        >
+          Resume: {lastDeckName || "Last Deck"}
+        </button>
+      )}
+
+      <button
+        onClick={() => {
+          localStorage.removeItem("ccna_lastDeckId");
+          localStorage.removeItem("ccna_lastDeckName");
+          window.location.reload();
+        }}
+        className="px-5 py-3 rounded-2xl bg-white/10 border border-white/15 text-white font-black hover:bg-white/15"
+      >
+        Clear Resume
+      </button>
+    </div>
+  </div>
+</div>
     );
   }
 
