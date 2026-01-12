@@ -62,27 +62,18 @@ const Section: React.FC<{
   tone?: SectionTone;
   children: React.ReactNode;
 
-  /** Collapsible behavior */
   collapsible?: boolean;
   defaultOpen?: boolean;
-
-  /** Animation */
-  index?: number;
 }> = ({
   title,
   tone = "default",
   children,
   collapsible = true,
   defaultOpen = false,
-  index = 0,
 }) => {
-  const delay = Math.min(index * 60, 240); // stagger up to ~0.24s max
-
   const Header = (
     <div className="flex items-center gap-2">
-      <div
-        className={`w-1.5 h-5 rounded-full bg-gradient-to-b ${toneStyles[tone]}`}
-      />
+      <div className={`w-1.5 h-5 rounded-full bg-gradient-to-b ${toneStyles[tone]}`} />
       <span className="text-base leading-none">{toneIcon[tone]}</span>
       <span className="text-xs font-extrabold uppercase tracking-widest text-slate-700">
         {title}
@@ -90,18 +81,34 @@ const Section: React.FC<{
     </div>
   );
 
-  // If not collapsible, render like a normal card
+  // Non-collapsible
   if (!collapsible) {
     return (
-      <div
-        className="border border-slate-200 rounded-2xl p-4 bg-white shadow-sm animate-in"
-        style={{ animationDelay: `${delay}ms` }}
-      >
+      <div className="border border-slate-200 rounded-2xl p-4 bg-white shadow-sm">
         <div className="mb-3">{Header}</div>
         {children}
       </div>
     );
   }
+
+  // Collapsible (chevron rotation handled by Tailwind group-open)
+  return (
+    <details
+      className="group border border-slate-200 rounded-2xl bg-white shadow-sm"
+      open={defaultOpen}
+    >
+      <summary className="cursor-pointer select-none list-none p-4 flex items-center justify-between">
+        {Header}
+        <span className="text-slate-400 font-black text-lg leading-none transition-transform group-open:rotate-90">
+          ›
+        </span>
+      </summary>
+
+      <div className="px-4 pb-4 -mt-1">{children}</div>
+    </details>
+  );
+};
+}
 
   // Collapsible card
   return (
@@ -191,7 +198,6 @@ function toStringArray(v: any): string[] {
 function normalizeResult(input: AiTutorResult | null): AiTutorResult | null {
   if (!input) return null;
 
-  // Sometimes the whole JSON ends up inside simpleExplanation or title, etc.
   const candidates = [
     (input as any)?.simpleExplanation,
     (input as any)?.title,
@@ -201,6 +207,11 @@ function normalizeResult(input: AiTutorResult | null): AiTutorResult | null {
     .map((x) => (typeof x === "string" ? x : ""))
     .filter(Boolean);
 
+  const safeTextFallback = (s: any) => {
+    const t = cleanText(typeof s === "string" ? s : "");
+    return looksLikeJsonBlob(t) ? "" : t;
+  };
+
   for (const c of candidates) {
     const trimmed = c.trim();
     const jsonBlock = looksLikeJsonBlob(trimmed) ? trimmed : extractJsonBlock(trimmed);
@@ -208,61 +219,33 @@ function normalizeResult(input: AiTutorResult | null): AiTutorResult | null {
 
     const parsed = tryParseJson(jsonBlock);
     if (parsed && typeof parsed === "object") {
-      // If core fields are missing, ignore this JSON blob
-      const hasEnoughData =
-        typeof parsed.simpleExplanation === "string" &&
-        parsed.simpleExplanation.length > 40 &&
-        (typeof parsed.realWorldExample === "string" ||
-          Array.isArray(parsed.keyCommands) ||
-          Array.isArray(parsed.commonMistakes) ||
-          Array.isArray(parsed.quickCheck));
+      // Use parsed JSON EVEN IF it's short (prevents raw blob leaking into UI)
+      const out: any = {};
 
-      if (!hasEnoughData) continue;
+      out.title = cleanText(parsed.title) || safeTextFallback((input as any)?.title) || "AI Tutor";
+      out.simpleExplanation = cleanText(parsed.simpleExplanation) || safeTextFallback((input as any)?.simpleExplanation);
+      out.realWorldExample = cleanText(parsed.realWorldExample) || safeTextFallback((input as any)?.realWorldExample);
 
-      const merged: any = { ...(input as any), ...parsed };
+      out.keyCommands = toStringArray(parsed.keyCommands);
+      out.commonMistakes = toStringArray(parsed.commonMistakes);
+      out.quickCheck = toStringArray(parsed.quickCheck);
 
-      // normalize fields so UI never breaks
-      merged.title = cleanText(merged.title) || "AI Tutor";
-      merged.simpleExplanation = cleanText(merged.simpleExplanation);
-      merged.realWorldExample = cleanText(merged.realWorldExample);
-      merged.keyCommands = toStringArray(merged.keyCommands);
-      merged.commonMistakes = toStringArray(merged.commonMistakes);
-      merged.quickCheck = toStringArray(merged.quickCheck);
-
-      return merged as AiTutorResult;
+      return out as AiTutorResult;
     }
   }
 
-  // Normal path: just clean/normalize
-  const out: any = { ...(input as any) };
-  out.title = cleanText(out.title) || "AI Tutor";
-  out.simpleExplanation = cleanText(out.simpleExplanation);
-  out.realWorldExample = cleanText(out.realWorldExample);
-  out.keyCommands = toStringArray(out.keyCommands);
-  out.commonMistakes = toStringArray(out.commonMistakes);
-  out.quickCheck = toStringArray(out.quickCheck);
+  // Normal path: clean/normalize without JSON
+  const out: any = {};
+  out.title = safeTextFallback((input as any)?.title) || "AI Tutor";
+  out.simpleExplanation = safeTextFallback((input as any)?.simpleExplanation);
+  out.realWorldExample = safeTextFallback((input as any)?.realWorldExample);
+  out.keyCommands = toStringArray((input as any)?.keyCommands);
+  out.commonMistakes = toStringArray((input as any)?.commonMistakes);
+  out.quickCheck = toStringArray((input as any)?.quickCheck);
+
   return out as AiTutorResult;
 }
 // ----------------------------------------------------------------------
-const styles = `
-@keyframes fadeSlideIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.animate-in {
-  opacity: 0;
-  animation: fadeSlideIn 260ms ease-out forwards;
-}
-
-/* rotate the chevron when open */
-details[open] summary span:last-child {
-  transform: rotate(90deg);
-  transition: transform 150ms ease;
-}
-details summary span:last-child {
-  transition: transform 150ms ease;
-}
-`;
 
 export default function StudyAssistant({ concept, result, loading, onClose }: Props) {
   const normalized = useMemo(() => normalizeResult(result), [result]);
@@ -291,7 +274,6 @@ export default function StudyAssistant({ concept, result, loading, onClose }: Pr
 
       {/* Modal */}
       <div className="relative w-full max-w-3xl bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
-       <style>{styles}</style>
         <div className="p-5 flex items-start justify-between border-b border-slate-200">
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 rounded-2xl bg-blue-50 flex items-center justify-center">⚡</div>
