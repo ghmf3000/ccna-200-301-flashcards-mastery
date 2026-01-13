@@ -1,30 +1,20 @@
-/**
- * Stripe Service for CCNA Mastery
- * In a production app, the Secret Key stays on your server.
- * This client helper initiates the redirect to Stripe.
- */
+// services/stripe.ts
+export async function startStripeCheckout(userId: string, email?: string) {
+  const res = await fetch("/api/stripe/create-checkout-session", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId, email }),
+  });
 
-// Replace this with your actual Stripe Publishable Key (starts with pk_test_...)
-const STRIPE_PUBLISHABLE_KEY = 'pk_test_PASTE_YOUR_KEY_HERE';
+  const data = await res.json();
 
-export const startStripeCheckout = async (deckId?: string | null, deckName?: string | null) => {
-  console.log("Starting Stripe Checkout for $39...");
+  if (!res.ok) {
+    throw new Error(data?.error || "Checkout failed");
+  }
 
-  // In a real environment, you would call your backend endpoint here:
-  // const response = await fetch('/api/create-checkout-session', { method: 'POST' });
-  // const session = await response.json();
-  // const stripe = await (window as any).Stripe(STRIPE_PUBLISHABLE_KEY);
-  // await stripe.redirectToCheckout({ sessionId: session.id });
+  if (!data?.url) {
+    throw new Error("Missing checkout URL from server");
+  }
 
-  // SIMULATOR MODE:
-  // Since we are in a frontend-only test environment, we simulate the redirect
-  // After 1 second, we'll "redirect" to the success URL.
-  // In your real app, Stripe handles this redirect.
-  
-  const successUrl = `${window.location.origin}${window.location.pathname}?success=true${deckId ? `&deckId=${deckId}` : ''}${deckName ? `&deckName=${encodeURIComponent(deckName)}` : ''}`;
-  
-  // To simulate the Stripe checkout page experience:
-  alert("REDIRECTING TO STRIPE (Test Mode)\n\nUse Test Card: 4242 4242 4242 4242\nAmount: $39.00");
-  
-  window.location.href = successUrl;
-};
+  window.location.href = data.url;
+}

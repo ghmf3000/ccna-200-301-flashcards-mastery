@@ -654,7 +654,18 @@ export default function App() {
                     </p>
 
                     <button
-                      onClick={() => startStripeCheckout(attemptedDeckId, attemptedDeckName)}
+                      onClick={() => {
+                       const uid = clerkUser?.id;
+                       const email = clerkUser?.primaryEmailAddress?.emailAddress;
+
+                       if (!uid) {
+                         alert("Please sign in to purchase Pro.");
+                         return;
+                      }
+
+                      startStripeCheckout(uid, email);
+                     }}
+
                       className="mt-6 w-full py-4 rounded-2xl bg-amber-400 text-amber-900 font-black shadow-lg hover:opacity-95"
                     >
                       Pay $39 to Unlock Pro
