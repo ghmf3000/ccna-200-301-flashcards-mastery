@@ -62,6 +62,9 @@ export default function App() {
   // Speech (browser TTS)
   const [isSpeaking, setIsSpeaking] = useState(false);
   const ttsUtterRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const lastSpokenKeyRef = useRef<string>(""); // lets us toggle stop on same button
+
+  const isPro = (appUser?.isPro ?? false) || localStorage.getItem("ccna_isPro") === "true";
 
   // -----------------------------
   // Clerk → View gating
@@ -85,7 +88,7 @@ export default function App() {
   }, [clerkUser]);
 
   // -----------------------------
-  // Load CSV data + Stripe return handling
+  // Load CSV data
   // -----------------------------
   useEffect(() => {
     (async () => {
@@ -102,15 +105,13 @@ export default function App() {
 
         if (success === "true") {
           localStorage.setItem("ccna_isPro", "true");
-          // keep appUser in sync
-          setAppUser((prev) => (prev ? { ...prev, isPro: true } : prev));
 
-          // If they returned to a specific deck, resume
           const resumeId = urlParams.get("deckId");
           const resumeName = urlParams.get("deckName");
           if (resumeId) {
             setSelectedDeckId(resumeId);
             setSelectedDeckName(resumeName);
+            setCurrentIndex(0);
             setView("study");
           }
 
@@ -142,18 +143,33 @@ export default function App() {
     localStorage.setItem("ccna_mastery", JSON.stringify(Array.from(masteredIds)));
   }, [masteredIds]);
 
-  // Cleanup TTS
+  // Cleanup TTS on unmount
   useEffect(() => {
     return () => {
       try {
         window.speechSynthesis?.cancel();
       } catch {}
+      setIsSpeaking(false);
+      lastSpokenKeyRef.current = "";
+      ttsUtterRef.current = null;
     };
   }, []);
 
   // -----------------------------
   // Derived lists
   // -----------------------------
+  const domainStats = useMemo(() => {
+    const stats: Record<number, { total: number; mastered: number }> = {};
+    CCNA_DOMAINS.forEach((d) => {
+      const domainDecks = decks.filter((deck) => Number(deck.domain_int) === d.id);
+      const domainDeckIds = new Set(domainDecks.map((deck) => deck.deck_id));
+      const domainCards = cards.filter((c) => domainDeckIds.has(c.deck_id));
+      const masteredCount = domainCards.filter((c) => masteredIds.has(c.card_id)).length;
+      stats[d.id] = { total: domainCards.length, mastered: masteredCount };
+    });
+    return stats;
+  }, [decks, cards, masteredIds]);
+
   const domainDecksList = useMemo(() => {
     if (!selectedDomainId) return [];
     return decks
@@ -173,7 +189,7 @@ export default function App() {
       answer: c.back,
       explanation: c.explanation,
       cliExample:
-        c.cli_config && c.cli_verify ? `${c.cli_config}\n${c.cli_verify}` : c.cli_config || c.cli_verify,
+        c.cli_config && c.cli_verify ? `${c.cli_config}\n${c.cli_verify}` : (c.cli_config || c.cli_verify),
       category: CCNA_Category.NetworkFundamentals,
       difficulty: "Medium" as const,
       domainId: selectedDomainId || 0,
@@ -185,30 +201,18 @@ export default function App() {
 
   const currentCard = studyCards[currentIndex];
 
-  // Dashboard stats (mastery by domain)
-  const domainStats = useMemo(() => {
-    const stats: Record<number, { total: number; mastered: number }> = {};
-    CCNA_DOMAINS.forEach((d) => {
-      const dDecks = decks.filter((deck) => Number(deck.domain_int) === d.id);
-      const deckIds = new Set(dDecks.map((x) => x.deck_id));
-      const dCards = cards.filter((c) => deckIds.has(c.deck_id));
-      const masteredCount = dCards.filter((c) => masteredIds.has(c.card_id)).length;
-      stats[d.id] = { total: dCards.length, mastered: masteredCount };
-    });
-    return stats;
-  }, [decks, cards, masteredIds]);
-
-  // Resume
-  const lastDeckId = localStorage.getItem("ccna_lastDeckId");
-  const lastDeckName = localStorage.getItem("ccna_lastDeckName");
-  const canResume = !!lastDeckId && decks.some((d) => d.deck_id === lastDeckId);
-
-  // Pro
-  const isPro = localStorage.getItem("ccna_isPro") === "true";
-
   // -----------------------------
   // Actions
   // -----------------------------
+  const stopSpeaking = () => {
+    try {
+      window.speechSynthesis.cancel();
+    } catch {}
+    setIsSpeaking(false);
+    lastSpokenKeyRef.current = "";
+    ttsUtterRef.current = null;
+  };
+
   const toggleMastery = (id: string) => {
     const next = new Set(masteredIds);
     if (next.has(id)) next.delete(id);
@@ -218,21 +222,24 @@ export default function App() {
 
   const handleDeckSelect = (deck: Deck) => {
     const premium = isPremiumValue(deck.is_premium);
-    const proNow = localStorage.getItem("ccna_isPro") === "true";
 
-    if (premium && !proNow) {
+    if (premium && !isPro) {
       setAttemptedDeckId(deck.deck_id);
       setAttemptedDeckName(deck.deck_name);
       setView("paywall");
       return;
     }
 
-    // ✅ save for resume
+    // stop any speech when switching content
+    stopSpeaking();
+
     localStorage.setItem("ccna_lastDeckId", deck.deck_id);
     localStorage.setItem("ccna_lastDeckName", deck.deck_name);
 
     setSelectedDeckId(deck.deck_id);
     setSelectedDeckName(deck.deck_name);
+    setAttemptedDeckId(null);
+    setAttemptedDeckName(null);
     setCurrentIndex(0);
     setView("study");
   };
@@ -245,7 +252,7 @@ export default function App() {
     try {
       const res = await explainConcept(concept, currentCard?.answer || "");
       setAiExplanation(res);
-    } catch (e) {
+    } catch {
       setAiExplanation({
         title: "AI Tutor",
         simpleExplanation: "Error connecting to AI tutor.",
@@ -259,78 +266,87 @@ export default function App() {
     }
   };
 
+  /**
+   * ✅ FIXED: Speaker toggles stop/start
+   * - If already speaking the same “key”, clicking again stops immediately.
+   * - If speaking something else, it stops and starts new speech.
+   */
   const handleSpeak = (text: string) => {
     try {
-      if (!text?.trim()) return;
+      const t = (text ?? "").trim();
+      if (!t) return;
 
-      window.speechSynthesis.cancel();
+      const key = `${selectedDeckId || "noDeck"}::${currentCard?.id || "noCard"}::${t.slice(0, 80)}`;
 
-      const utter = new SpeechSynthesisUtterance(text);
+      // If currently speaking the same thing → stop
+      if (isSpeaking && lastSpokenKeyRef.current === key) {
+        stopSpeaking();
+        return;
+      }
+
+      // Otherwise stop any current speech and start new
+      stopSpeaking();
+
+      const utter = new SpeechSynthesisUtterance(t);
       ttsUtterRef.current = utter;
+      lastSpokenKeyRef.current = key;
 
       utter.rate = 1;
       utter.pitch = 1;
+
       utter.onstart = () => setIsSpeaking(true);
-      utter.onend = () => setIsSpeaking(false);
-      utter.onerror = () => setIsSpeaking(false);
+      utter.onend = () => {
+        setIsSpeaking(false);
+        lastSpokenKeyRef.current = "";
+        ttsUtterRef.current = null;
+      };
+      utter.onerror = () => {
+        setIsSpeaking(false);
+        lastSpokenKeyRef.current = "";
+        ttsUtterRef.current = null;
+      };
 
       window.speechSynthesis.speak(utter);
-    } catch {
-      setIsSpeaking(false);
+    } catch (e) {
+      console.error("TTS error:", e);
+      stopSpeaking();
     }
   };
 
   const goBack = () => {
+    stopSpeaking();
     if (view === "study") setView("deckSelect");
-    else if (view === "deckSelect") setView("domainSelect");
+    else if (view === "deckSelect" || view === "paywall") setView("domainSelect");
   };
-
-  // -----------------------------
-  // Shared background wrappers
-  // -----------------------------
-  const SignedInShell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-    <div className="min-h-screen relative overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-br from-[#061526] via-[#071a2e] to-[#0b2a3f]" />
-      <div className="absolute -top-24 -left-24 w-[420px] h-[420px] bg-cyan-400/10 blur-3xl rounded-full" />
-      <div className="absolute -bottom-32 -right-24 w-[520px] h-[520px] bg-indigo-400/10 blur-3xl rounded-full" />
-      <div className="relative z-10 min-h-screen">{children}</div>
-    </div>
-  );
 
   // -----------------------------
   // Loading / errors
   // -----------------------------
   if (isDataLoading) {
     return (
-      <SignedInShell>
-        <div className="min-h-screen flex items-center justify-center px-6">
-          <div className="w-full max-w-md rounded-3xl bg-white/10 border border-white/15 backdrop-blur-xl p-6 shadow-2xl text-center">
-            <div className="w-10 h-10 border-4 border-white/30 border-t-white rounded-full animate-spin mx-auto" />
-            <div className="text-white font-black mt-4">Syncing CCNA Database…</div>
-            <div className="text-white/70 text-sm mt-1">Loading decks and cards</div>
-          </div>
+      <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white">
+        <div className="flex items-center gap-3">
+          <div className="w-5 h-5 border-2 border-white/40 border-t-transparent rounded-full animate-spin" />
+          <div className="text-sm font-bold">Loading decks…</div>
         </div>
-      </SignedInShell>
+      </div>
     );
   }
 
   if (dataError) {
     return (
-      <SignedInShell>
-        <div className="min-h-screen flex items-center justify-center px-6">
-          <div className="w-full max-w-md rounded-3xl bg-white/10 border border-white/15 backdrop-blur-xl p-6 shadow-2xl text-center">
-            <div className="text-4xl">⚠️</div>
-            <div className="text-white font-black mt-3">Sync Error</div>
-            <div className="text-white/70 text-sm mt-2">{dataError}</div>
-            <button
-              onClick={() => window.location.reload()}
-              className="mt-5 w-full py-3 rounded-2xl bg-white text-slate-900 font-black shadow-lg hover:opacity-95"
-            >
-              Retry
-            </button>
-          </div>
+      <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white p-6">
+        <div className="max-w-md w-full rounded-3xl border border-white/10 bg-white/5 p-6">
+          <div className="text-lg font-black">Sync Error</div>
+          <p className="text-white/70 mt-2 text-sm">{dataError}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-5 w-full py-3 rounded-2xl bg-white text-slate-900 font-black"
+          >
+            Retry
+          </button>
         </div>
-      </SignedInShell>
+      </div>
     );
   }
 
@@ -344,6 +360,8 @@ export default function App() {
         <div className="min-h-screen relative overflow-hidden flex items-center justify-center px-6">
           {/* Background */}
           <div className="absolute inset-0 bg-gradient-to-br from-[#001c2b] via-[#005073] to-[#0a2540]" />
+
+          {/* Soft glow blobs */}
           <div className="absolute -top-24 -left-24 w-[420px] h-[420px] bg-cyan-400/20 blur-3xl rounded-full" />
           <div className="absolute -bottom-32 -right-24 w-[520px] h-[520px] bg-indigo-400/20 blur-3xl rounded-full" />
 
@@ -357,7 +375,7 @@ export default function App() {
             <rect width="100%" height="100%" fill="url(#grid)" />
           </svg>
 
-          {/* Foreground */}
+          {/* Foreground content */}
           <div className="relative w-full max-w-5xl grid grid-cols-1 lg:grid-cols-2 gap-10 items-center">
             {/* Left marketing panel */}
             <div className="hidden lg:block text-white">
@@ -379,7 +397,7 @@ export default function App() {
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div className="rounded-2xl bg-white/10 p-4">
                     <div className="text-xs font-black uppercase tracking-widest text-white/70">Cards</div>
-                    <div className="text-2xl font-black">500+</div>
+                    <div className="text-2xl font-black">{cards.length || "—"}</div>
                   </div>
                   <div className="rounded-2xl bg-white/10 p-4">
                     <div className="text-xs font-black uppercase tracking-widest text-white/70">Domains</div>
@@ -420,332 +438,240 @@ export default function App() {
 
       {/* SIGNED IN (APP) */}
       <SignedIn>
-        <SignedInShell>
-          {/* Header */}
-          <header className="bg-[#005073] text-white shadow-md sticky top-0 z-40 h-16 flex items-center">
-            <div className="max-w-6xl mx-auto px-4 w-full flex justify-between items-center">
-              <div className="flex items-center gap-3">
-                {(view === "deckSelect" || view === "study" || view === "paywall") && (
-                  <button onClick={goBack} className="p-2 hover:bg-white/10 rounded-full transition-colors" aria-label="Back">
-                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                    </svg>
-                  </button>
-                )}
+        <div className="min-h-screen relative overflow-hidden">
+          {/* Signed-in background */}
+          <div className="absolute inset-0 bg-gradient-to-br from-[#061526] via-[#071a2e] to-[#0b2a3f]" />
+          <div className="absolute -top-24 -left-24 w-[420px] h-[420px] bg-cyan-400/10 blur-3xl rounded-full" />
+          <div className="absolute -bottom-32 -right-24 w-[520px] h-[520px] bg-indigo-400/10 blur-3xl rounded-full" />
 
-                <h1 className="text-xl font-bold">CCNA Mastery</h1>
+          <div className="relative z-10 min-h-screen flex flex-col">
+            {/* Header */}
+            <header className="bg-[#005073] text-white shadow-md sticky top-0 z-40 h-16 flex items-center">
+              <div className="max-w-6xl mx-auto px-4 w-full flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  {(view !== "domainSelect" && view !== "login") && (
+                    <button
+                      type="button"
+                      onClick={goBack}
+                      className="p-2 hover:bg-white/10 rounded-full transition-colors"
+                      aria-label="Back"
+                    >
+                      <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                      </svg>
+                    </button>
+                  )}
 
-                {isPro ? (
-                  <span className="bg-amber-400 text-amber-900 text-[10px] font-black px-2 py-0.5 rounded-full uppercase ml-1 shadow-sm">
-                    PRO
+                  <h1 className="text-xl font-bold">CCNA Mastery</h1>
+
+                  {isPro && (
+                    <span className="bg-amber-400 text-amber-900 text-[10px] font-black px-2 py-0.5 rounded-full uppercase ml-1 shadow-sm">
+                      PRO
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-white/70 hidden sm:block">
+                    {clerkUser?.primaryEmailAddress?.emailAddress}
                   </span>
-                ) : (
-                  <span className="bg-white/10 text-white text-[10px] font-black px-2 py-0.5 rounded-full uppercase ml-1">
-                    FREE
-                  </span>
-                )}
+                  <UserButton afterSignOutUrl="/" />
+                </div>
               </div>
+            </header>
 
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-white/70 hidden sm:block">
-                  {clerkUser?.primaryEmailAddress?.emailAddress}
-                </span>
-                <UserButton afterSignOutUrl="/" />
-              </div>
-            </div>
-          </header>
+            {/* Body */}
+            <div className="flex-1 pb-10">
+              {/* DOMAIN SELECT */}
+              {view === "domainSelect" && (
+                <main className="flex-1 max-w-6xl mx-auto p-6 w-full">
+                  <div className="bg-white/10 border border-white/15 backdrop-blur-xl rounded-3xl p-6 shadow-2xl mb-8">
+                    <div className="text-white/70 text-xs font-black uppercase tracking-widest">Learning Dashboard</div>
+                    <h2 className="text-white text-2xl font-black mt-1">Welcome back 👋</h2>
+                    <p className="text-white/70 text-sm mt-2">
+                      {cards.length} cards • {decks.length} decks • 6 domains
+                    </p>
+                  </div>
 
-          {/* Content */}
-          <div className="pb-10">
-            {/* DOMAIN SELECT */}
-            {view === "domainSelect" && (
-              <main className="max-w-6xl mx-auto p-6 w-full">
-                {/* Hero */}
-                <div className="rounded-3xl bg-white/10 border border-white/15 backdrop-blur-xl p-6 shadow-2xl mb-8">
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-                    <div>
-                      <div className="text-white/70 text-xs font-black uppercase tracking-widest">Learning Dashboard</div>
-                      <h2 className="text-white text-2xl font-black mt-1">Welcome back 👋</h2>
-                      <p className="text-white/70 text-sm mt-2">
-                        {cards.length} cards • {decks.length} decks • 6 domains
-                      </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {CCNA_DOMAINS.map((domain) => {
+                      const stats = domainStats[domain.id] || { total: 0, mastered: 0 };
+                      const progress = stats.total > 0 ? (stats.mastered / stats.total) * 100 : 0;
+                      const color = getDomainColor(domain.id);
+
+                      return (
+                        <button
+                          key={domain.id}
+                          onClick={() => {
+                            stopSpeaking();
+                            setSelectedDomainId(domain.id);
+                            setSelectedDomainName(domain.subtitle);
+                            setView("deckSelect");
+                          }}
+                          style={{ borderLeftColor: color }}
+                          className="bg-white/10 hover:bg-white/15 border border-white/10 rounded-3xl p-6 text-left shadow-2xl backdrop-blur-xl transition-all border-l-[6px]"
+                        >
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <div className="text-[10px] font-black uppercase tracking-[0.2em]" style={{ color }}>
+                                Domain {domain.id}
+                              </div>
+                              <div className="text-xl font-black text-white mt-1">{domain.subtitle}</div>
+                              <div className="text-white/60 text-xs mt-2">{domain.description}</div>
+                            </div>
+                            <div className="text-2xl">{domain.icon}</div>
+                          </div>
+
+                          <div className="mt-5">
+                            <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-white/60">
+                              <span>
+                                {stats.mastered}/{stats.total} mastered
+                              </span>
+                              <span>{Math.round(progress)}%</span>
+                            </div>
+                            <div className="mt-2 h-2 w-full bg-black/20 rounded-full overflow-hidden">
+                              <div className="h-full rounded-full" style={{ width: `${progress}%`, backgroundColor: color }} />
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </main>
+              )}
+
+              {/* DECK SELECT */}
+              {view === "deckSelect" && (
+                <main className="flex-1 max-w-2xl mx-auto p-6 w-full">
+                  <div className="mb-6">
+                    <h2 className="text-2xl font-black uppercase tracking-tight text-white">
+                      {selectedDomainName ? `${selectedDomainName} Decks` : "Available Decks"}
+                    </h2>
+                    <p className="text-white/60 text-sm mt-1">Choose a deck to start studying.</p>
+                  </div>
+
+                  <div className="space-y-4">
+                    {domainDecksList.map((deck) => {
+                      const premium = isPremiumValue(deck.is_premium);
+                      const locked = premium && !isPro;
+
+                      return (
+                        <button
+                          key={deck.deck_id}
+                          onClick={() => handleDeckSelect(deck)}
+                          className={`w-full rounded-2xl p-5 text-left border backdrop-blur-xl transition-all ${
+                            locked
+                              ? "bg-amber-500/10 border-amber-400/30 hover:bg-amber-500/15"
+                              : "bg-white/10 border-white/10 hover:bg-white/15"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <div className="text-white font-black">{deck.deck_name}</div>
+                              <div className="text-white/60 text-xs mt-1">
+                                {premium ? "PRO 🔒" : "FREE"} • Deck ID: {deck.deck_id}
+                              </div>
+                            </div>
+                            <div className="text-white/60 text-sm font-black">›</div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </main>
+              )}
+
+              {/* STUDY */}
+              {view === "study" && (
+                <main className="flex-1 flex flex-col items-center justify-center p-4 max-w-4xl mx-auto w-full">
+                  {studyCards.length === 0 ? (
+                    <div className="bg-white/10 border border-white/10 rounded-3xl p-8 text-center text-white">
+                      <div className="text-4xl mb-3">📭</div>
+                      <div className="text-lg font-black">Deck is Empty</div>
+                      <div className="text-white/70 text-sm mt-2">No cards were found for this deck.</div>
+                      <button
+                        onClick={() => setView("deckSelect")}
+                        className="mt-6 px-6 py-3 rounded-2xl bg-white text-slate-900 font-black"
+                      >
+                        Return to Decks
+                      </button>
                     </div>
+                  ) : (
+                    <div className="w-full max-w-lg space-y-6">
+                      <div className="flex items-center justify-between">
+                        <div className="text-white/70 text-xs font-black uppercase tracking-widest line-clamp-1">
+                          {selectedDeckName}
+                        </div>
+                        <div className="text-white/80 text-xs font-black">
+                          {currentIndex + 1} / {studyCards.length}
+                        </div>
+                      </div>
 
-                    <div className="flex flex-col sm:flex-row gap-3">
-                      {canResume && (
+                      <FlashcardComponent
+                        card={currentCard}
+                        isMastered={masteredIds.has(currentCard.id)}
+                        onMastered={() => toggleMastery(currentCard.id)}
+                        onExplain={handleExplain}
+                        onSpeak={handleSpeak}
+                        isSpeaking={isSpeaking}
+                        domainColor={getDomainColor(selectedDomainId)}
+                      />
+
+                      <div className="flex items-center justify-center gap-6 pb-10">
                         <button
                           onClick={() => {
-                            setSelectedDeckId(lastDeckId!);
-                            setSelectedDeckName(lastDeckName || "Last Deck");
-                            setView("study");
+                            stopSpeaking();
+                            setCurrentIndex((prev) => (prev - 1 + studyCards.length) % studyCards.length);
                           }}
-                          className="px-5 py-3 rounded-2xl bg-white text-slate-900 font-black shadow-lg hover:opacity-95"
+                          className="p-4 rounded-full bg-white/10 border border-white/10 text-white hover:bg-white/15"
                         >
-                          Resume: {lastDeckName || "Last Deck"}
+                          ‹
                         </button>
-                      )}
 
-                      <button
-                        onClick={() => {
-                          localStorage.removeItem("ccna_lastDeckId");
-                          localStorage.removeItem("ccna_lastDeckName");
-                          window.location.reload();
-                        }}
-                        className="px-5 py-3 rounded-2xl bg-white/10 border border-white/15 text-white font-black hover:bg-white/15"
-                      >
-                        Clear Resume
-                      </button>
+                        <button
+                          onClick={() => {
+                            stopSpeaking();
+                            setCurrentIndex((prev) => (prev + 1) % studyCards.length);
+                          }}
+                          className="p-4 rounded-full bg-white/10 border border-white/10 text-white hover:bg-white/15"
+                        >
+                          ›
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                </div>
+                  )}
+                </main>
+              )}
 
-                {/* Domain cards */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {CCNA_DOMAINS.map((domain) => {
-                    const stats = domainStats[domain.id] || { total: 0, mastered: 0 };
-                    const progress = stats.total > 0 ? Math.round((stats.mastered / stats.total) * 100) : 0;
-                    const color = getDomainColor(domain.id);
+              {/* PAYWALL */}
+              {view === "paywall" && (
+                <main className="flex-1 flex items-center justify-center p-6">
+                  <div className="bg-white/10 border border-white/10 backdrop-blur-xl rounded-3xl p-8 max-w-md w-full text-center text-white shadow-2xl">
+                    <div className="text-5xl mb-4">👑</div>
+                    <div className="text-2xl font-black">Unlock Pro</div>
+                    <p className="text-white/70 text-sm mt-2">
+                      The deck <b className="text-white">"{attemptedDeckName}"</b> is part of CCNA Mastery Pro.
+                    </p>
 
-                    return (
-                      <button
-                        key={domain.id}
-                        onClick={() => {
-                          setSelectedDomainId(domain.id);
-                          setSelectedDomainName(domain.subtitle);
-                          setView("deckSelect");
-                        }}
-                        className="group text-left rounded-3xl bg-white/10 border border-white/15 backdrop-blur-xl p-6 shadow-xl hover:bg-white/15 transition-all relative overflow-hidden"
-                      >
-                        <div className="absolute top-0 left-0 h-1" style={{ width: `${progress}%`, backgroundColor: color }} />
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <div className="text-[10px] font-black uppercase tracking-[0.2em]" style={{ color }}>
-                              Domain {domain.id}
-                            </div>
-                            <div className="text-white text-xl font-black mt-1">{domain.subtitle}</div>
-                            <div className="text-white/70 text-xs mt-2 line-clamp-2">{domain.description}</div>
-                          </div>
-                          <div className="text-3xl">{domain.icon}</div>
-                        </div>
+                    <button
+                      onClick={() => startStripeCheckout(attemptedDeckId, attemptedDeckName)}
+                      className="mt-6 w-full py-4 rounded-2xl bg-amber-400 text-amber-900 font-black shadow-lg hover:opacity-95"
+                    >
+                      Pay $39 to Unlock Pro
+                    </button>
 
-                        <div className="mt-5 flex items-center justify-between">
-                          <div className="text-white/70 text-xs font-black uppercase tracking-widest">
-                            {stats.mastered}/{stats.total} mastered
-                          </div>
-                          <div className="text-white/70 text-xs font-black uppercase tracking-widest">{progress}%</div>
-                        </div>
-
-                        <div className="mt-2 h-2 w-full rounded-full bg-white/10 overflow-hidden">
-                          <div className="h-full rounded-full" style={{ width: `${progress}%`, backgroundColor: color }} />
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </main>
-            )}
-
-            {/* DECK SELECT */}
-            {view === "deckSelect" && (
-              <main className="max-w-3xl mx-auto p-6 w-full">
-                <div className="mb-6">
-                  <div className="text-white/70 text-xs font-black uppercase tracking-widest">Choose a deck</div>
-                  <h2 className="text-white text-2xl font-black mt-1" style={{ color: getDomainColor(selectedDomainId) }}>
-                    {selectedDomainName ? `${selectedDomainName} Decks` : "Decks"}
-                  </h2>
-                </div>
-
-                <div className="space-y-4">
-                  {domainDecksList.map((deck) => {
-                    const deckCardsCount = cards.filter((c) => c.deck_id === deck.deck_id).length;
-                    const deckMasteredCount = cards.filter((c) => c.deck_id === deck.deck_id && masteredIds.has(c.card_id)).length;
-
-                    const premium = isPremiumValue(deck.is_premium);
-                    const locked = premium && !isPro;
-
-                    return (
-                      <button
-                        key={deck.deck_id}
-                        onClick={() => handleDeckSelect(deck)}
-                        className={`w-full text-left rounded-2xl p-5 shadow-xl backdrop-blur-xl border transition-all ${
-                          locked
-                            ? "bg-amber-500/10 border-amber-300/30 hover:bg-amber-500/15"
-                            : "bg-white/10 border-white/15 hover:bg-white/15"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <div className="text-white font-black text-lg truncate">{deck.deck_name}</div>
-                              {premium ? (
-                                <span className="text-[10px] bg-amber-400 text-amber-900 px-2 py-0.5 rounded-full font-black uppercase">
-                                  PRO 🔒
-                                </span>
-                              ) : (
-                                <span className="text-[10px] bg-white/10 text-white px-2 py-0.5 rounded-full font-black uppercase">
-                                  FREE
-                                </span>
-                              )}
-                            </div>
-
-                            <div className="flex flex-wrap gap-3 mt-2 text-xs font-black uppercase tracking-widest">
-                              <span className="text-white/70">{deckCardsCount} cards</span>
-                              {deckMasteredCount > 0 && <span className="text-green-300">✓ {deckMasteredCount} mastered</span>}
-                            </div>
-                          </div>
-
-                          <div className="flex-shrink-0">
-                            {locked ? (
-                              <div className="w-10 h-10 rounded-full bg-amber-400/15 border border-amber-300/30 flex items-center justify-center text-amber-200">
-                                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                                  <path
-                                    fillRule="evenodd"
-                                    d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z"
-                                    clipRule="evenodd"
-                                  />
-                                </svg>
-                              </div>
-                            ) : (
-                              <div className="w-10 h-10 rounded-full bg-white/10 border border-white/15 flex items-center justify-center text-white/70">
-                                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                </svg>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </main>
-            )}
-
-            {/* STUDY */}
-            {view === "study" && (
-              <main className="max-w-4xl mx-auto p-6 w-full">
-                {studyCards.length === 0 ? (
-                  <div className="rounded-3xl bg-white/10 border border-white/15 backdrop-blur-xl p-10 shadow-2xl text-center">
-                    <div className="text-5xl">📭</div>
-                    <div className="text-white font-black text-xl mt-4">Deck is Empty</div>
-                    <div className="text-white/70 text-sm mt-2">
-                      No cards mapped for ID:{" "}
-                      <code className="bg-white/10 px-2 py-1 rounded text-xs">{selectedDeckId}</code>
-                    </div>
                     <button
                       onClick={() => setView("deckSelect")}
-                      className="mt-6 px-6 py-3 rounded-2xl bg-white text-slate-900 font-black shadow-lg hover:opacity-95"
+                      className="mt-3 w-full py-3 rounded-2xl bg-white/10 border border-white/10 text-white font-black hover:bg-white/15"
                     >
-                      Return to Decks
+                      Maybe later
                     </button>
                   </div>
-                ) : (
-                  <div className="flex flex-col items-center gap-6">
-                    {/* Top bar */}
-                    <div className="w-full rounded-3xl bg-white/10 border border-white/15 backdrop-blur-xl p-5 shadow-xl">
-                      <div className="flex items-end justify-between gap-4">
-                        <div className="min-w-0">
-                          <div className="text-white/70 text-xs font-black uppercase tracking-widest truncate">
-                            {selectedDeckName}
-                          </div>
-                          <div className="text-white text-lg font-black mt-1">
-                            Card {currentIndex + 1} of {studyCards.length}
-                          </div>
-                        </div>
+                </main>
+              )}
+            </div>
 
-                        <div className="text-xs font-black uppercase tracking-widest px-3 py-1.5 rounded-full bg-white/10 border border-white/15 text-white/80">
-                          Domain {selectedDomainId ?? "—"}
-                        </div>
-                      </div>
-
-                      <div className="mt-4 h-2 w-full bg-white/10 rounded-full overflow-hidden">
-                        <div
-                          className="h-full rounded-full"
-                          style={{
-                            width: `${((currentIndex + 1) / studyCards.length) * 100}%`,
-                            backgroundColor: getDomainColor(selectedDomainId),
-                          }}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Flashcard */}
-                    {currentCard && (
-                      <div className="w-full flex justify-center">
-                        <FlashcardComponent
-                          card={currentCard}
-                          isMastered={masteredIds.has(currentCard.id)}
-                          onMastered={() => toggleMastery(currentCard.id)}
-                          onExplain={handleExplain}
-                          onSpeak={handleSpeak}
-                          isSpeaking={isSpeaking}
-                          domainColor={getDomainColor(selectedDomainId)}
-                        />
-                      </div>
-                    )}
-
-                    {/* Nav buttons */}
-                    <div className="flex items-center gap-6">
-                      <button
-                        onClick={() => setCurrentIndex((prev) => (prev - 1 + studyCards.length) % studyCards.length)}
-                        className="p-4 rounded-full bg-white/10 border border-white/15 text-white/80 hover:bg-white/15 active:scale-95 transition"
-                        aria-label="Previous card"
-                      >
-                        <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 19l-7-7 7-7" />
-                        </svg>
-                      </button>
-
-                      <button
-                        onClick={() => setCurrentIndex((prev) => (prev + 1) % studyCards.length)}
-                        className="p-4 rounded-full bg-white/10 border border-white/15 text-white/80 hover:bg-white/15 active:scale-95 transition"
-                        aria-label="Next card"
-                      >
-                        <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </main>
-            )}
-
-            {/* PAYWALL */}
-            {view === "paywall" && (
-              <main className="max-w-md mx-auto p-6 w-full">
-                <div className="rounded-3xl bg-amber-500/10 border border-amber-300/25 backdrop-blur-xl p-8 shadow-2xl text-center">
-                  <div className="text-6xl">👑</div>
-                  <div className="text-white font-black text-2xl mt-4">Unlock Pro</div>
-                  <div className="text-white/70 text-sm mt-2 leading-relaxed">
-                    The deck <span className="text-white font-black">"{attemptedDeckName}"</span> is part of CCNA Mastery Pro.
-                    Unlock all premium content today.
-                  </div>
-
-                  <button
-                    onClick={() => startStripeCheckout(attemptedDeckId, attemptedDeckName)}
-                    className="mt-6 w-full py-4 rounded-2xl bg-amber-400 text-amber-900 font-black shadow-xl hover:opacity-95"
-                  >
-                    Pay $39 to Unlock Pro
-                  </button>
-
-                  <button
-                    onClick={() => setView("deckSelect")}
-                    className="mt-3 w-full py-3 rounded-2xl bg-white/10 border border-white/15 text-white font-black hover:bg-white/15"
-                  >
-                    Maybe later
-                  </button>
-
-                  <div className="mt-6 flex items-center justify-center gap-3 text-[10px] text-white/60 font-black uppercase tracking-widest">
-                    <span>One-time payment</span>
-                    <span className="w-1 h-1 bg-white/40 rounded-full" />
-                    <span>Lifetime access</span>
-                  </div>
-                </div>
-              </main>
-            )}
-
-            {/* AI Modal */}
+            {/* AI Tutor Modal */}
             {(aiExplanation || aiLoading) && (
               <StudyAssistant
                 concept={currentConcept}
@@ -758,7 +684,7 @@ export default function App() {
               />
             )}
           </div>
-        </SignedInShell>
+        </div>
       </SignedIn>
     </div>
   );
